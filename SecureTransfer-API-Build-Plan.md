@@ -163,14 +163,14 @@ Sized for ~5–6 focused weeks alongside coursework. Each phase ends with someth
 *Goal: a project that compiles, boots, and connects to a database. No features yet.*
 
 **Build steps:**
-1. Generate the project at `start.spring.io` (or let Claude Code do it) with: Spring Web, Spring Data JPA, Spring Security, PostgreSQL Driver, Validation, Flyway, Testcontainers. Use Java 21 and the Gradle or Maven build (either is fine; Gradle is a bit less verbose).
+1. Generate the project at `start.spring.io` (or let Claude Code do it) with: Spring Web, Spring Data JPA, Spring Security, PostgreSQL Driver, Validation, Flyway, Testcontainers. Use Java 25 (the current LTS) and the Gradle or Maven build (either is fine; Gradle is a bit less verbose). For Spring Boot, pick the latest **3.5.x** — it's fully Java 25-ready and has the most tutorials and Stack Overflow answers, which matters while you're learning. (Spring Boot 4.0 also supports Java 25 but is newer with fewer beginner resources.)
 2. Add a `docker-compose.yml` that runs one PostgreSQL container with a database, username, and password.
 3. Put the database connection details in `application.yml`, reading the password from an environment variable (never hard-code it).
 4. Write the first Flyway migration (`V1__init.sql`) that creates the six tables from Section 5, with primary keys, foreign keys, and a unique constraint on `idempotency_keys.key`.
 5. Add a `.gitignore` (ignore `/build`, `/target`, `.env`, IDE files) and a README skeleton.
 
 **Tell Claude Code:**
-> "Phase 0 only, then stop. Scaffold a Spring Boot 3 / Java 21 project (Gradle) with the dependencies listed in the build plan. Add a docker-compose.yml for Postgres, wire application.yml to read the DB password from an env var, and write a Flyway V1 migration creating the six tables in Section 5 with proper keys and constraints. Explain each file."
+> "Phase 0 only, then stop. Scaffold a Spring Boot 3.5.x / Java 25 project (Gradle) with the dependencies listed in the build plan. Add a docker-compose.yml for Postgres, wire application.yml to read the DB password from an env var, and write a Flyway V1 migration creating the six tables in Section 5 with proper keys and constraints. Explain each file."
 
 **Watch out for:** the app failing to start because Docker/Postgres isn't running (start Docker Desktop first), or because the DB password env var isn't set. Flyway runs migrations automatically on startup — if a migration has a typo, the app won't boot and the error will name the bad line.
 
