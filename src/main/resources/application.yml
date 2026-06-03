@@ -1,0 +1,38 @@
+# application.yml
+# Central configuration for the Spring Boot app. Replaces the generated
+# application.properties (YAML is easier to read once config grows).
+
+spring:
+  application:
+    name: securetransfer-api
+
+  # --- Database connection ---
+  # Must match the credentials in docker-compose.yml. The password is read
+  # from the DB_PASSWORD environment variable and is intentionally NOT given
+  # a default, so the app fails fast with a clear error if you forget to set
+  # it — secrets never live in this file. (See .env.example.)
+  datasource:
+    url: jdbc:postgresql://localhost:5433/securetransfer   # 5433 -> docker-compose Postgres (5432 is a local native Postgres)
+    username: securetransfer
+    password: ${DB_PASSWORD}
+
+  # --- JPA / Hibernate ---
+  jpa:
+    hibernate:
+      # Flyway owns the schema. Hibernate must NOT create or alter tables;
+      # "validate" only checks that our entities line up with the DB schema.
+      ddl-auto: validate
+    # Keep the DB session out of the web layer — avoids accidental lazy-load
+    # queries while rendering responses. Good default for an API.
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+
+  # --- Flyway database migrations ---
+  # Flyway runs the SQL files in db/migration on startup, in version order,
+  # applying each one exactly once and recording it in a flyway_schema_history
+  # table.
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
