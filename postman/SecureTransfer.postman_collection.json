@@ -1,0 +1,161 @@
+{
+  "info": {
+    "_postman_id": "b2f1c0a0-0000-4000-8000-securetransfer1",
+    "name": "SecureTransfer API",
+    "description": "SecureTransfer API requests. Phase 1: customers & accounts.\n\nRun the requests top-to-bottom: 'Create Customer' saves the new id into the {{customerId}} collection variable, 'Create Account' uses it and saves {{accountId}}, then 'Get Account' reads it back. The last two requests demonstrate the error paths (400 and 404).\n\nThe app must be running (./gradlew bootRun) and listening on {{baseUrl}}.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080", "type": "string" },
+    { "key": "customerId", "value": "", "type": "string" },
+    { "key": "accountId", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Create Customer",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 201 Created', () => pm.response.to.have.status(201));",
+              "const body = pm.response.json();",
+              "pm.test('returns an id', () => pm.expect(body).to.have.property('id'));",
+              "pm.collectionVariables.set('customerId', body.id);",
+              "console.log('Saved customerId =', body.id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Alice Example\",\n  \"email\": \"{{$randomEmail}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/customers",
+          "host": [ "{{baseUrl}}" ],
+          "path": [ "customers" ]
+        },
+        "description": "Create a customer. Uses Postman's {{$randomEmail}} so re-runs don't collide with the unique-email constraint."
+      }
+    },
+    {
+      "name": "Create Account",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 201 Created', () => pm.response.to.have.status(201));",
+              "const body = pm.response.json();",
+              "pm.test('balance is 100.0000', () => pm.expect(Number(body.balance)).to.eql(100));",
+              "pm.collectionVariables.set('accountId', body.id);",
+              "console.log('Saved accountId =', body.id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"customerId\": {{customerId}},\n  \"currency\": \"USD\",\n  \"initialBalance\": 100.00\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/accounts",
+          "host": [ "{{baseUrl}}" ],
+          "path": [ "accounts" ]
+        },
+        "description": "Create an account for the customer created above, seeded with 100.00 USD."
+      }
+    },
+    {
+      "name": "Get Account",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200 OK', () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.test('has balance and ledger', () => {",
+              "  pm.expect(body).to.have.property('balance');",
+              "  pm.expect(body).to.have.property('ledger');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/accounts/{{accountId}}",
+          "host": [ "{{baseUrl}}" ],
+          "path": [ "accounts", "{{accountId}}" ]
+        },
+        "description": "Read the account back: balance plus ledger history (empty until Phase 2 transfers exist)."
+      }
+    },
+    {
+      "name": "Create Customer (invalid -> 400)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 400 Bad Request', () => pm.response.to.have.status(400));",
+              "pm.test('reports field errors', () => pm.expect(pm.response.json()).to.have.property('fieldErrors'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"\",\n  \"email\": \"not-an-email\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/customers",
+          "host": [ "{{baseUrl}}" ],
+          "path": [ "customers" ]
+        },
+        "description": "Blank name + invalid email → validation fails with 400 and a fieldErrors map."
+      }
+    },
+    {
+      "name": "Get Account (unknown -> 404)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 404 Not Found', () => pm.response.to.have.status(404));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/accounts/999999",
+          "host": [ "{{baseUrl}}" ],
+          "path": [ "accounts", "999999" ]
+        },
+        "description": "A non-existent account id → 404 (handled by GlobalExceptionHandler)."
+      }
+    }
+  ]
+}

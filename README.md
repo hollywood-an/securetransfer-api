@@ -52,7 +52,7 @@ Secrets come from the environment, never from committed files:
 
 ## Project status
 - [x] **Phase 0** — Project scaffold, Docker Postgres, Flyway schema (6 tables)
-- [ ] Phase 1 — Accounts & balances
+- [x] **Phase 1** — Customers & accounts (create + read balance/ledger)
 - [ ] Phase 2 — Atomic, concurrency-safe transfers
 - [ ] Phase 3 — Idempotency
 - [ ] Phase 4 — Auth & RBAC
@@ -61,8 +61,23 @@ Secrets come from the environment, never from committed files:
 - [ ] Phase 7 — Integration tests
 - [ ] Phase 8 — CI/CD + deploy
 
-## Database schema (Phase 0)
-Six tables, created by `V1__init.sql`:
-`accounts`, `idempotency_keys`, `transfers`, `ledger_entries`,
-`audit_log`, `fraud_reviews`. Money is `NUMERIC(19,4)`; the ledger and
-audit log are append-only.
+## API endpoints
+Phase 1 (no authentication yet — Phase 4 adds JWT + roles):
+
+| Method | Path             | Purpose                                     |
+|--------|------------------|---------------------------------------------|
+| POST   | `/customers`     | Create a customer                           |
+| POST   | `/accounts`      | Create an account for a customer            |
+| GET    | `/accounts/{id}` | Get an account's balance + ledger history   |
+
+A ready-to-run Postman collection is in
+[`postman/SecureTransfer.postman_collection.json`](./postman/SecureTransfer.postman_collection.json)
+(run the requests top-to-bottom; it chains the created ids automatically).
+
+## Database schema
+- `V1__init.sql` — six tables: `accounts`, `idempotency_keys`, `transfers`,
+  `ledger_entries`, `audit_log`, `fraud_reviews`.
+- `V2__customers_and_account_constraints.sql` — adds the `customers` table and
+  the `accounts → customers` foreign key.
+
+Money is `NUMERIC(19,4)`; the ledger and audit log are append-only.
