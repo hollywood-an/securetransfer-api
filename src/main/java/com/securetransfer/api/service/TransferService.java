@@ -1,5 +1,7 @@
 package com.securetransfer.api.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.securetransfer.api.domain.Account;
 import com.securetransfer.api.domain.LedgerDirection;
 import com.securetransfer.api.domain.LedgerEntry;
@@ -17,7 +19,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * The core of the system: moving money safely.
+ * The core of the system: moving money safely, and recording the idempotency
+ * result in the SAME transaction.
  */
 @Service
 public class TransferService {
@@ -25,43 +28,47 @@ public class TransferService {
     private final AccountRepository accounts;
     private final TransferRepository transfers;
     private final LedgerEntryRepository ledgerEntries;
+    private final IdempotencyService idempotency;
+    private final ObjectMapper objectMapper;
 
     public TransferService(AccountRepository accounts,
                            TransferRepository transfers,
-                           LedgerEntryRepository ledgerEntries) {
+                           LedgerEntryRepository ledgerEntries,
+                           IdempotencyService idempotency,
+                           ObjectMapper objectMapper) {
         this.accounts = accounts;
         this.transfers = transfers;
         this.ledgerEntries = ledgerEntries;
+        this.idempotency = idempotency;
+        this.objectMapper = objectMapper;
     }
 
     /**
-     * Execute a transfer atomically.
+     * Execute a transfer atomically and mark its idempotency key COMPLETED.
      *
-     * @Transactional makes the entire method ONE database transaction: every
-     * write below (the transfers row, the two ledger rows, both balance
-     * updates) either all commit together, or — if anything throws — all roll
-     * back together. There is no way to leave money half-moved.
+     * @Transactional makes the whole method ONE transaction: the transfers row,
+     * the two ledger rows, both balance updates, AND flipping the idempotency
+     * key to COMPLETED with its response snapshot all commit together — or, if
+     * anything throws, all roll back together. The key is only ever "done" if
+     * the money actually moved.
      */
     @Transactional
-    public TransferResponse transfer(CreateTransferRequest request) {
+    public TransferResponse execute(String idempotencyKey, CreateTransferRequest request, String requestHash) {
         Long fromId = request.fromAccount();
         Long toId = request.toAccount();
 
-        // A transfer to the same account is meaningless (the DB also forbids it
-        // via a CHECK constraint). Reject early as a 400.
+        // A transfer to the same account is meaningless (DB also forbids it).
         if (fromId.equals(toId)) {
             throw new BadRequestException("fromAccount and toAccount must be different");
         }
 
         // Lock BOTH account rows before reading balances, ALWAYS in ascending id
-        // order. Consistent ordering is what prevents a deadlock between an
-        // A->B transfer and a simultaneous B->A transfer.
+        // order so opposing transfers (A->B and B->A) can't deadlock.
         Long firstId = Math.min(fromId, toId);
         Long secondId = Math.max(fromId, toId);
         Account firstLocked = lockAccount(firstId);
         Account secondLocked = lockAccount(secondId);
 
-        // Figure out which locked account is the sender and which is the receiver.
         Account from = fromId.equals(firstLocked.getId()) ? firstLocked : secondLocked;
         Account to = toId.equals(firstLocked.getId()) ? firstLocked : secondLocked;
 
@@ -77,28 +84,38 @@ public class TransferService {
                     "Account " + from.getId() + " has insufficient funds for this transfer");
         }
 
-        // Record the transfer first so we have its id for the ledger rows.
-        Transfer transfer = transfers.save(
-                new Transfer(fromId, toId, request.amount(), TransferStatus.COMPLETED));
+        // Record the transfer (linked to its idempotency key) so we have its id.
+        Transfer transfer = transfers.save(new Transfer(
+                idempotencyKey, fromId, toId, request.amount(), TransferStatus.COMPLETED));
 
-        // Move the money. These mutate the locked, managed entities; Hibernate
-        // flushes the UPDATEs when the transaction commits.
+        // Move the money.
         from.debit(request.amount());
         to.credit(request.amount());
 
-        // Double-entry: one DEBIT out of the sender and one CREDIT into the
-        // receiver — equal amounts that net to zero.
+        // Double-entry: one DEBIT out of the sender, one CREDIT into the receiver.
         ledgerEntries.save(new LedgerEntry(
                 transfer.getId(), from.getId(), LedgerDirection.DEBIT, request.amount()));
         ledgerEntries.save(new LedgerEntry(
                 transfer.getId(), to.getId(), LedgerDirection.CREDIT, request.amount()));
 
-        return TransferResponse.from(transfer, from, to);
+        TransferResponse response = TransferResponse.from(transfer, from, to);
+
+        // Store the result against the idempotency key, in THIS transaction.
+        idempotency.complete(idempotencyKey, toJson(response));
+
+        return response;
     }
 
-    /** Load an account with a pessimistic write lock, or 404 if it doesn't exist. */
     private Account lockAccount(Long id) {
         return accounts.findByIdForUpdate(id)
                 .orElseThrow(() -> new NotFoundException("Account " + id + " not found"));
+    }
+
+    private String toJson(TransferResponse response) {
+        try {
+            return objectMapper.writeValueAsString(response);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Could not serialize transfer response", e);
+        }
     }
 }

@@ -2,29 +2,25 @@
   "info": {
     "_postman_id": "b2f1c0a0-0000-4000-8000-securetransfer1",
     "name": "SecureTransfer API",
-    "description": "SecureTransfer API requests.\n\nPhase 1: customers & accounts.\nPhase 2: transfers (atomic, locked, double-entry ledger).\n\nRun the requests top-to-bottom. 'Create Customer' saves {{customerId}}; 'Create Account A/B' save {{fromAccountId}}/{{toAccountId}}; 'Create Transfer' moves money A->B; the later requests demonstrate the error paths (422 insufficient funds, 404 unknown, 400 validation).\n\nThe app must be running (./gradlew bootRun) and listening on {{baseUrl}}.",
+    "description": "SecureTransfer API requests.\n\nPhase 1: customers & accounts.\nPhase 2: transfers (atomic, locked, double-entry ledger).\nPhase 3: idempotency (POST /transfers requires an Idempotency-Key header).\n\nRun top-to-bottom. 'Create Customer' saves {{customerId}}; 'Create Account A/B' save {{fromAccountId}}/{{toAccountId}}; 'Create Transfer' moves money A->B and saves {{transferKey}} + {{firstTransferId}}; 'Replay Transfer' resends the SAME key and proves the money moves only once. Later requests show the error paths.\n\nThe app must be running (./gradlew bootRun) on {{baseUrl}}.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     { "key": "baseUrl", "value": "http://localhost:8080", "type": "string" },
     { "key": "customerId", "value": "", "type": "string" },
     { "key": "fromAccountId", "value": "", "type": "string" },
-    { "key": "toAccountId", "value": "", "type": "string" }
+    { "key": "toAccountId", "value": "", "type": "string" },
+    { "key": "transferKey", "value": "", "type": "string" },
+    { "key": "firstTransferId", "value": "", "type": "string" }
   ],
   "item": [
     {
       "name": "Create Customer",
       "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('status is 201 Created', () => pm.response.to.have.status(201));",
-              "pm.collectionVariables.set('customerId', pm.response.json().id);"
-            ]
-          }
-        }
+        { "listen": "test", "script": { "type": "text/javascript", "exec": [
+          "pm.test('status is 201 Created', () => pm.response.to.have.status(201));",
+          "pm.collectionVariables.set('customerId', pm.response.json().id);"
+        ] } }
       ],
       "request": {
         "method": "POST",
@@ -36,16 +32,10 @@
     {
       "name": "Create Account A (sender, balance 100)",
       "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('status is 201 Created', () => pm.response.to.have.status(201));",
-              "pm.collectionVariables.set('fromAccountId', pm.response.json().id);"
-            ]
-          }
-        }
+        { "listen": "test", "script": { "type": "text/javascript", "exec": [
+          "pm.test('status is 201 Created', () => pm.response.to.have.status(201));",
+          "pm.collectionVariables.set('fromAccountId', pm.response.json().id);"
+        ] } }
       ],
       "request": {
         "method": "POST",
@@ -57,16 +47,10 @@
     {
       "name": "Create Account B (receiver, balance 0)",
       "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('status is 201 Created', () => pm.response.to.have.status(201));",
-              "pm.collectionVariables.set('toAccountId', pm.response.json().id);"
-            ]
-          }
-        }
+        { "listen": "test", "script": { "type": "text/javascript", "exec": [
+          "pm.test('status is 201 Created', () => pm.response.to.have.status(201));",
+          "pm.collectionVariables.set('toAccountId', pm.response.json().id);"
+        ] } }
       ],
       "request": {
         "method": "POST",
@@ -78,44 +62,111 @@
     {
       "name": "Create Transfer (A -> B, 30.00)",
       "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('status is 201 Created', () => pm.response.to.have.status(201));",
-              "const body = pm.response.json();",
-              "pm.test('sender balance is now 70', () => pm.expect(Number(body.fromBalance)).to.eql(70));",
-              "pm.test('receiver balance is now 30', () => pm.expect(Number(body.toBalance)).to.eql(30));"
-            ]
-          }
-        }
+        { "listen": "prerequest", "script": { "type": "text/javascript", "exec": [
+          "// Fresh idempotency key for this run; reused by 'Replay Transfer'.",
+          "pm.collectionVariables.set('transferKey', 'tx-' + pm.variables.replaceIn('{{$guid}}'));"
+        ] } },
+        { "listen": "test", "script": { "type": "text/javascript", "exec": [
+          "pm.test('status is 201 Created', () => pm.response.to.have.status(201));",
+          "const body = pm.response.json();",
+          "pm.collectionVariables.set('firstTransferId', body.id);",
+          "pm.test('sender balance is now 70', () => pm.expect(Number(body.fromBalance)).to.eql(70));",
+          "pm.test('receiver balance is now 30', () => pm.expect(Number(body.toBalance)).to.eql(30));"
+        ] } }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Idempotency-Key", "value": "{{transferKey}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"fromAccount\": {{fromAccountId}},\n  \"toAccount\": {{toAccountId}},\n  \"amount\": 30.00\n}" },
+        "url": { "raw": "{{baseUrl}}/transfers", "host": [ "{{baseUrl}}" ], "path": [ "transfers" ] }
+      }
+    },
+    {
+      "name": "Replay Transfer (same key -> money moves once)",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": [
+          "pm.test('status is 201 Created', () => pm.response.to.have.status(201));",
+          "const body = pm.response.json();",
+          "pm.test('same transfer id as the first call (replayed)', () => pm.expect(String(body.id)).to.eql(pm.collectionVariables.get('firstTransferId')));",
+          "pm.test('balances unchanged: money moved only once (70/30)', () => {",
+          "  pm.expect(Number(body.fromBalance)).to.eql(70);",
+          "  pm.expect(Number(body.toBalance)).to.eql(30);",
+          "});"
+        ] } }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Idempotency-Key", "value": "{{transferKey}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"fromAccount\": {{fromAccountId}},\n  \"toAccount\": {{toAccountId}},\n  \"amount\": 30.00\n}" },
+        "url": { "raw": "{{baseUrl}}/transfers", "host": [ "{{baseUrl}}" ], "path": [ "transfers" ] }
+      }
+    },
+    {
+      "name": "Transfer - missing Idempotency-Key (-> 400)",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": [
+          "pm.test('status is 400 Bad Request', () => pm.response.to.have.status(400));"
+        ] } }
       ],
       "request": {
         "method": "POST",
         "header": [ { "key": "Content-Type", "value": "application/json" } ],
-        "body": { "mode": "raw", "raw": "{\n  \"fromAccount\": {{fromAccountId}},\n  \"toAccount\": {{toAccountId}},\n  \"amount\": 30.00\n}" },
+        "body": { "mode": "raw", "raw": "{\n  \"fromAccount\": {{fromAccountId}},\n  \"toAccount\": {{toAccountId}},\n  \"amount\": 5.00\n}" },
+        "url": { "raw": "{{baseUrl}}/transfers", "host": [ "{{baseUrl}}" ], "path": [ "transfers" ] }
+      }
+    },
+    {
+      "name": "Transfer - insufficient funds (-> 422)",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": [
+          "pm.test('status is 422 Unprocessable Entity', () => pm.response.to.have.status(422));"
+        ] } }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Idempotency-Key", "value": "{{$guid}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"fromAccount\": {{fromAccountId}},\n  \"toAccount\": {{toAccountId}},\n  \"amount\": 1000000.00\n}" },
+        "url": { "raw": "{{baseUrl}}/transfers", "host": [ "{{baseUrl}}" ], "path": [ "transfers" ] }
+      }
+    },
+    {
+      "name": "Transfer - unknown account (-> 404)",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": [
+          "pm.test('status is 404 Not Found', () => pm.response.to.have.status(404));"
+        ] } }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Idempotency-Key", "value": "{{$guid}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"fromAccount\": {{fromAccountId}},\n  \"toAccount\": 999999,\n  \"amount\": 10.00\n}" },
         "url": { "raw": "{{baseUrl}}/transfers", "host": [ "{{baseUrl}}" ], "path": [ "transfers" ] }
       }
     },
     {
       "name": "Get Account A (after transfer)",
       "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('status is 200 OK', () => pm.response.to.have.status(200));",
-              "const body = pm.response.json();",
-              "pm.test('balance is 70', () => pm.expect(Number(body.balance)).to.eql(70));",
-              "pm.test('ledger has one DEBIT', () => {",
-              "  pm.expect(body.ledger).to.have.lengthOf(1);",
-              "  pm.expect(body.ledger[0].direction).to.eql('DEBIT');",
-              "});"
-            ]
-          }
-        }
+        { "listen": "test", "script": { "type": "text/javascript", "exec": [
+          "pm.test('status is 200 OK', () => pm.response.to.have.status(200));",
+          "const body = pm.response.json();",
+          "pm.test('balance is 70', () => pm.expect(Number(body.balance)).to.eql(70));",
+          "pm.test('ledger has one DEBIT', () => {",
+          "  pm.expect(body.ledger).to.have.lengthOf(1);",
+          "  pm.expect(body.ledger[0].direction).to.eql('DEBIT');",
+          "});"
+        ] } }
       ],
       "request": {
         "method": "GET",
@@ -124,58 +175,12 @@
       }
     },
     {
-      "name": "Transfer - insufficient funds (-> 422)",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('status is 422 Unprocessable Entity', () => pm.response.to.have.status(422));"
-            ]
-          }
-        }
-      ],
-      "request": {
-        "method": "POST",
-        "header": [ { "key": "Content-Type", "value": "application/json" } ],
-        "body": { "mode": "raw", "raw": "{\n  \"fromAccount\": {{fromAccountId}},\n  \"toAccount\": {{toAccountId}},\n  \"amount\": 1000000.00\n}" },
-        "url": { "raw": "{{baseUrl}}/transfers", "host": [ "{{baseUrl}}" ], "path": [ "transfers" ] }
-      }
-    },
-    {
-      "name": "Transfer - unknown account (-> 404)",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('status is 404 Not Found', () => pm.response.to.have.status(404));"
-            ]
-          }
-        }
-      ],
-      "request": {
-        "method": "POST",
-        "header": [ { "key": "Content-Type", "value": "application/json" } ],
-        "body": { "mode": "raw", "raw": "{\n  \"fromAccount\": {{fromAccountId}},\n  \"toAccount\": 999999,\n  \"amount\": 10.00\n}" },
-        "url": { "raw": "{{baseUrl}}/transfers", "host": [ "{{baseUrl}}" ], "path": [ "transfers" ] }
-      }
-    },
-    {
       "name": "Create Customer (invalid -> 400)",
       "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('status is 400 Bad Request', () => pm.response.to.have.status(400));",
-              "pm.test('reports field errors', () => pm.expect(pm.response.json()).to.have.property('fieldErrors'));"
-            ]
-          }
-        }
+        { "listen": "test", "script": { "type": "text/javascript", "exec": [
+          "pm.test('status is 400 Bad Request', () => pm.response.to.have.status(400));",
+          "pm.test('reports field errors', () => pm.expect(pm.response.json()).to.have.property('fieldErrors'));"
+        ] } }
       ],
       "request": {
         "method": "POST",
@@ -187,15 +192,9 @@
     {
       "name": "Get Account (unknown -> 404)",
       "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('status is 404 Not Found', () => pm.response.to.have.status(404));"
-            ]
-          }
-        }
+        { "listen": "test", "script": { "type": "text/javascript", "exec": [
+          "pm.test('status is 404 Not Found', () => pm.response.to.have.status(404));"
+        ] } }
       ],
       "request": {
         "method": "GET",

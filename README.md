@@ -54,7 +54,7 @@ Secrets come from the environment, never from committed files:
 - [x] **Phase 0** — Project scaffold, Docker Postgres, Flyway schema (6 tables)
 - [x] **Phase 1** — Customers & accounts (create + read balance/ledger)
 - [x] **Phase 2** — Atomic, concurrency-safe transfers (double-entry ledger)
-- [ ] Phase 3 — Idempotency
+- [x] **Phase 3** — Idempotency (Idempotency-Key replay protection)
 - [ ] Phase 4 — Auth & RBAC
 - [ ] Phase 5 — Audit log
 - [ ] Phase 6 — Agentic fraud triage
@@ -71,11 +71,15 @@ Phases 1–2 (no authentication yet — Phase 4 adds JWT + roles):
 | GET    | `/accounts/{id}` | Get an account's balance + ledger history        |
 | POST   | `/transfers`     | Move money between accounts (atomic, row-locked) |
 
-Transfers are atomic (`@Transactional`), use pessimistic row locking
-(`SELECT … FOR UPDATE`, accounts locked in id order to avoid deadlocks), and
-write two double-entry ledger rows that net to zero. Errors: `404` unknown
-account, `422` insufficient funds, `400` invalid request (e.g. same-account or
-non-positive amount).
+`POST /transfers` **requires an `Idempotency-Key` header** (`400` if missing).
+The first request with a key processes the transfer and stores its response; a
+repeat of the same key replays that stored response without moving money again
+(`409` if the first is still in progress, or if the key is reused with a
+different body). Transfers are atomic (`@Transactional`), use pessimistic row
+locking (`SELECT … FOR UPDATE`, accounts locked in id order to avoid deadlocks),
+and write two double-entry ledger rows that net to zero. Errors: `404` unknown
+account, `422` insufficient funds, `400` invalid request (same-account,
+non-positive amount, cross-currency, or missing key).
 
 A ready-to-run Postman collection is in
 [`postman/SecureTransfer.postman_collection.json`](./postman/SecureTransfer.postman_collection.json)

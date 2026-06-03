@@ -53,7 +53,9 @@ public class Transfer {
         // JPA requires a no-arg constructor.
     }
 
-    public Transfer(Long fromAccount, Long toAccount, BigDecimal amount, TransferStatus status) {
+    public Transfer(String idempotencyKey, Long fromAccount, Long toAccount,
+                    BigDecimal amount, TransferStatus status) {
+        this.idempotencyKey = idempotencyKey;
         this.fromAccount = fromAccount;
         this.toAccount = toAccount;
         this.amount = amount;
