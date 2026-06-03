@@ -2,13 +2,14 @@
   "info": {
     "_postman_id": "b2f1c0a0-0000-4000-8000-securetransfer1",
     "name": "SecureTransfer API",
-    "description": "SecureTransfer API requests. Phase 1: customers & accounts.\n\nRun the requests top-to-bottom: 'Create Customer' saves the new id into the {{customerId}} collection variable, 'Create Account' uses it and saves {{accountId}}, then 'Get Account' reads it back. The last two requests demonstrate the error paths (400 and 404).\n\nThe app must be running (./gradlew bootRun) and listening on {{baseUrl}}.",
+    "description": "SecureTransfer API requests.\n\nPhase 1: customers & accounts.\nPhase 2: transfers (atomic, locked, double-entry ledger).\n\nRun the requests top-to-bottom. 'Create Customer' saves {{customerId}}; 'Create Account A/B' save {{fromAccountId}}/{{toAccountId}}; 'Create Transfer' moves money A->B; the later requests demonstrate the error paths (422 insufficient funds, 404 unknown, 400 validation).\n\nThe app must be running (./gradlew bootRun) and listening on {{baseUrl}}.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     { "key": "baseUrl", "value": "http://localhost:8080", "type": "string" },
     { "key": "customerId", "value": "", "type": "string" },
-    { "key": "accountId", "value": "", "type": "string" }
+    { "key": "fromAccountId", "value": "", "type": "string" },
+    { "key": "toAccountId", "value": "", "type": "string" }
   ],
   "item": [
     {
@@ -20,10 +21,7 @@
             "type": "text/javascript",
             "exec": [
               "pm.test('status is 201 Created', () => pm.response.to.have.status(201));",
-              "const body = pm.response.json();",
-              "pm.test('returns an id', () => pm.expect(body).to.have.property('id'));",
-              "pm.collectionVariables.set('customerId', body.id);",
-              "console.log('Saved customerId =', body.id);"
+              "pm.collectionVariables.set('customerId', pm.response.json().id);"
             ]
           }
         }
@@ -31,20 +29,54 @@
       "request": {
         "method": "POST",
         "header": [ { "key": "Content-Type", "value": "application/json" } ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"name\": \"Alice Example\",\n  \"email\": \"{{$randomEmail}}\"\n}"
-        },
-        "url": {
-          "raw": "{{baseUrl}}/customers",
-          "host": [ "{{baseUrl}}" ],
-          "path": [ "customers" ]
-        },
-        "description": "Create a customer. Uses Postman's {{$randomEmail}} so re-runs don't collide with the unique-email constraint."
+        "body": { "mode": "raw", "raw": "{\n  \"name\": \"Alice Example\",\n  \"email\": \"{{$randomEmail}}\"\n}" },
+        "url": { "raw": "{{baseUrl}}/customers", "host": [ "{{baseUrl}}" ], "path": [ "customers" ] }
       }
     },
     {
-      "name": "Create Account",
+      "name": "Create Account A (sender, balance 100)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 201 Created', () => pm.response.to.have.status(201));",
+              "pm.collectionVariables.set('fromAccountId', pm.response.json().id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "body": { "mode": "raw", "raw": "{\n  \"customerId\": {{customerId}},\n  \"currency\": \"USD\",\n  \"initialBalance\": 100.00\n}" },
+        "url": { "raw": "{{baseUrl}}/accounts", "host": [ "{{baseUrl}}" ], "path": [ "accounts" ] }
+      }
+    },
+    {
+      "name": "Create Account B (receiver, balance 0)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 201 Created', () => pm.response.to.have.status(201));",
+              "pm.collectionVariables.set('toAccountId', pm.response.json().id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "body": { "mode": "raw", "raw": "{\n  \"customerId\": {{customerId}},\n  \"currency\": \"USD\"\n}" },
+        "url": { "raw": "{{baseUrl}}/accounts", "host": [ "{{baseUrl}}" ], "path": [ "accounts" ] }
+      }
+    },
+    {
+      "name": "Create Transfer (A -> B, 30.00)",
       "event": [
         {
           "listen": "test",
@@ -53,9 +85,8 @@
             "exec": [
               "pm.test('status is 201 Created', () => pm.response.to.have.status(201));",
               "const body = pm.response.json();",
-              "pm.test('balance is 100.0000', () => pm.expect(Number(body.balance)).to.eql(100));",
-              "pm.collectionVariables.set('accountId', body.id);",
-              "console.log('Saved accountId =', body.id);"
+              "pm.test('sender balance is now 70', () => pm.expect(Number(body.fromBalance)).to.eql(70));",
+              "pm.test('receiver balance is now 30', () => pm.expect(Number(body.toBalance)).to.eql(30));"
             ]
           }
         }
@@ -63,20 +94,12 @@
       "request": {
         "method": "POST",
         "header": [ { "key": "Content-Type", "value": "application/json" } ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"customerId\": {{customerId}},\n  \"currency\": \"USD\",\n  \"initialBalance\": 100.00\n}"
-        },
-        "url": {
-          "raw": "{{baseUrl}}/accounts",
-          "host": [ "{{baseUrl}}" ],
-          "path": [ "accounts" ]
-        },
-        "description": "Create an account for the customer created above, seeded with 100.00 USD."
+        "body": { "mode": "raw", "raw": "{\n  \"fromAccount\": {{fromAccountId}},\n  \"toAccount\": {{toAccountId}},\n  \"amount\": 30.00\n}" },
+        "url": { "raw": "{{baseUrl}}/transfers", "host": [ "{{baseUrl}}" ], "path": [ "transfers" ] }
       }
     },
     {
-      "name": "Get Account",
+      "name": "Get Account A (after transfer)",
       "event": [
         {
           "listen": "test",
@@ -85,9 +108,10 @@
             "exec": [
               "pm.test('status is 200 OK', () => pm.response.to.have.status(200));",
               "const body = pm.response.json();",
-              "pm.test('has balance and ledger', () => {",
-              "  pm.expect(body).to.have.property('balance');",
-              "  pm.expect(body).to.have.property('ledger');",
+              "pm.test('balance is 70', () => pm.expect(Number(body.balance)).to.eql(70));",
+              "pm.test('ledger has one DEBIT', () => {",
+              "  pm.expect(body.ledger).to.have.lengthOf(1);",
+              "  pm.expect(body.ledger[0].direction).to.eql('DEBIT');",
               "});"
             ]
           }
@@ -96,12 +120,47 @@
       "request": {
         "method": "GET",
         "header": [],
-        "url": {
-          "raw": "{{baseUrl}}/accounts/{{accountId}}",
-          "host": [ "{{baseUrl}}" ],
-          "path": [ "accounts", "{{accountId}}" ]
-        },
-        "description": "Read the account back: balance plus ledger history (empty until Phase 2 transfers exist)."
+        "url": { "raw": "{{baseUrl}}/accounts/{{fromAccountId}}", "host": [ "{{baseUrl}}" ], "path": [ "accounts", "{{fromAccountId}}" ] }
+      }
+    },
+    {
+      "name": "Transfer - insufficient funds (-> 422)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 422 Unprocessable Entity', () => pm.response.to.have.status(422));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "body": { "mode": "raw", "raw": "{\n  \"fromAccount\": {{fromAccountId}},\n  \"toAccount\": {{toAccountId}},\n  \"amount\": 1000000.00\n}" },
+        "url": { "raw": "{{baseUrl}}/transfers", "host": [ "{{baseUrl}}" ], "path": [ "transfers" ] }
+      }
+    },
+    {
+      "name": "Transfer - unknown account (-> 404)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 404 Not Found', () => pm.response.to.have.status(404));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "body": { "mode": "raw", "raw": "{\n  \"fromAccount\": {{fromAccountId}},\n  \"toAccount\": 999999,\n  \"amount\": 10.00\n}" },
+        "url": { "raw": "{{baseUrl}}/transfers", "host": [ "{{baseUrl}}" ], "path": [ "transfers" ] }
       }
     },
     {
@@ -121,16 +180,8 @@
       "request": {
         "method": "POST",
         "header": [ { "key": "Content-Type", "value": "application/json" } ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"name\": \"\",\n  \"email\": \"not-an-email\"\n}"
-        },
-        "url": {
-          "raw": "{{baseUrl}}/customers",
-          "host": [ "{{baseUrl}}" ],
-          "path": [ "customers" ]
-        },
-        "description": "Blank name + invalid email → validation fails with 400 and a fieldErrors map."
+        "body": { "mode": "raw", "raw": "{\n  \"name\": \"\",\n  \"email\": \"not-an-email\"\n}" },
+        "url": { "raw": "{{baseUrl}}/customers", "host": [ "{{baseUrl}}" ], "path": [ "customers" ] }
       }
     },
     {
@@ -149,12 +200,7 @@
       "request": {
         "method": "GET",
         "header": [],
-        "url": {
-          "raw": "{{baseUrl}}/accounts/999999",
-          "host": [ "{{baseUrl}}" ],
-          "path": [ "accounts", "999999" ]
-        },
-        "description": "A non-existent account id → 404 (handled by GlobalExceptionHandler)."
+        "url": { "raw": "{{baseUrl}}/accounts/999999", "host": [ "{{baseUrl}}" ], "path": [ "accounts", "999999" ] }
       }
     }
   ]

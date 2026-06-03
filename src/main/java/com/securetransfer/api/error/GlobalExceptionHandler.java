@@ -31,6 +31,18 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.CONFLICT, ex.getMessage(), null);
     }
 
+    // Sender can't fund the transfer: well-formed request, but unprocessable.
+    @ExceptionHandler(InsufficientFundsException.class)
+    public ResponseEntity<ApiError> handleInsufficientFunds(InsufficientFundsException ex) {
+        return build(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), null);
+    }
+
+    // Invalid request that bean-validation can't express (e.g. same-account transfer).
+    @ExceptionHandler(BadRequestException.class)
+    public ResponseEntity<ApiError> handleBadRequest(BadRequestException ex) {
+        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), null);
+    }
+
     /** Fired when @Valid fails on a request body — collect the per-field messages. */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiError> handleValidation(MethodArgumentNotValidException ex) {

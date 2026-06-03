@@ -53,7 +53,7 @@ Secrets come from the environment, never from committed files:
 ## Project status
 - [x] **Phase 0** — Project scaffold, Docker Postgres, Flyway schema (6 tables)
 - [x] **Phase 1** — Customers & accounts (create + read balance/ledger)
-- [ ] Phase 2 — Atomic, concurrency-safe transfers
+- [x] **Phase 2** — Atomic, concurrency-safe transfers (double-entry ledger)
 - [ ] Phase 3 — Idempotency
 - [ ] Phase 4 — Auth & RBAC
 - [ ] Phase 5 — Audit log
@@ -62,13 +62,20 @@ Secrets come from the environment, never from committed files:
 - [ ] Phase 8 — CI/CD + deploy
 
 ## API endpoints
-Phase 1 (no authentication yet — Phase 4 adds JWT + roles):
+Phases 1–2 (no authentication yet — Phase 4 adds JWT + roles):
 
-| Method | Path             | Purpose                                     |
-|--------|------------------|---------------------------------------------|
-| POST   | `/customers`     | Create a customer                           |
-| POST   | `/accounts`      | Create an account for a customer            |
-| GET    | `/accounts/{id}` | Get an account's balance + ledger history   |
+| Method | Path             | Purpose                                          |
+|--------|------------------|--------------------------------------------------|
+| POST   | `/customers`     | Create a customer                                |
+| POST   | `/accounts`      | Create an account for a customer                 |
+| GET    | `/accounts/{id}` | Get an account's balance + ledger history        |
+| POST   | `/transfers`     | Move money between accounts (atomic, row-locked) |
+
+Transfers are atomic (`@Transactional`), use pessimistic row locking
+(`SELECT … FOR UPDATE`, accounts locked in id order to avoid deadlocks), and
+write two double-entry ledger rows that net to zero. Errors: `404` unknown
+account, `422` insufficient funds, `400` invalid request (e.g. same-account or
+non-positive amount).
 
 A ready-to-run Postman collection is in
 [`postman/SecureTransfer.postman_collection.json`](./postman/SecureTransfer.postman_collection.json)

@@ -53,6 +53,14 @@ public class LedgerEntry {
         // JPA requires a no-arg constructor.
     }
 
+    /** Create a new ledger line (written by TransferService in Phase 2). */
+    public LedgerEntry(Long transferId, Long accountId, LedgerDirection direction, BigDecimal amount) {
+        this.transferId = transferId;
+        this.accountId = accountId;
+        this.direction = direction;
+        this.amount = amount;
+    }
+
     public Long getId() {
         return id;
     }

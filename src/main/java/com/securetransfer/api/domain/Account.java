@@ -63,6 +63,20 @@ public class Account {
         this.balance = balance;
     }
 
+    /**
+     * Subtract money from this account (the sender side of a transfer).
+     * The caller must check there are sufficient funds first; the DB's
+     * balance >= 0 CHECK is the last-line backstop.
+     */
+    public void debit(BigDecimal amount) {
+        this.balance = this.balance.subtract(amount);
+    }
+
+    /** Add money to this account (the receiver side of a transfer). */
+    public void credit(BigDecimal amount) {
+        this.balance = this.balance.add(amount);
+    }
+
     public Long getId() {
         return id;
     }
