@@ -98,7 +98,7 @@ public class TransferService {
         ledgerEntries.save(new LedgerEntry(
                 transfer.getId(), to.getId(), LedgerDirection.CREDIT, request.amount()));
 
-        TransferResponse response = TransferResponse.from(transfer, from, to);
+        TransferResponse response = TransferResponse.from(transfer, from);
 
         // Store the result against the idempotency key, in THIS transaction.
         idempotency.complete(idempotencyKey, toJson(response));

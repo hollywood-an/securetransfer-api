@@ -44,3 +44,18 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+
+# --- Application-specific settings ---
+app:
+  jwt:
+    # HS256 signing secret — MUST be at least 32 characters. Read from the
+    # environment with NO default, so the app fails fast if JWT_SECRET is unset.
+    # Never commit it. (See .env.example.)
+    secret: ${JWT_SECRET}
+    expiration-minutes: 60
+  seed:
+    # Passwords for the seeded staff logins (admin / teller). Read from the
+    # environment with NO default — like JWT_SECRET, the app fails fast if these
+    # are unset rather than ever baking a usable credential into committed config.
+    admin-password: ${ADMIN_PASSWORD}
+    teller-password: ${TELLER_PASSWORD}

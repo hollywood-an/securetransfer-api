@@ -2,12 +2,16 @@
   "info": {
     "_postman_id": "b2f1c0a0-0000-4000-8000-securetransfer1",
     "name": "SecureTransfer API",
-    "description": "SecureTransfer API requests.\n\nPhase 1: customers & accounts.\nPhase 2: transfers (atomic, locked, double-entry ledger).\nPhase 3: idempotency (POST /transfers requires an Idempotency-Key header).\n\nRun top-to-bottom. 'Create Customer' saves {{customerId}}; 'Create Account A/B' save {{fromAccountId}}/{{toAccountId}}; 'Create Transfer' moves money A->B and saves {{transferKey}} + {{firstTransferId}}; 'Replay Transfer' resends the SAME key and proves the money moves only once. Later requests show the error paths.\n\nThe app must be running (./gradlew bootRun) on {{baseUrl}}.",
+    "description": "SecureTransfer API requests.\n\nPhase 1: customers & accounts. Phase 2: transfers. Phase 3: idempotency. Phase 4: JWT auth + roles.\n\nRun top-to-bottom. It registers a CUSTOMER (alice), logs in the seeded admin to open accounts, logs alice in, and then exercises the allowed actions plus the denied ones (403) and unauthenticated ones (401). Tokens and ids are chained automatically via collection variables.\n\nThe app must be running (./gradlew bootRun) on {{baseUrl}} with the seeded admin password = admin12345.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     { "key": "baseUrl", "value": "http://localhost:8080", "type": "string" },
-    { "key": "customerId", "value": "", "type": "string" },
+    { "key": "aliceUsername", "value": "", "type": "string" },
+    { "key": "customerToken", "value": "", "type": "string" },
+    { "key": "adminToken", "value": "", "type": "string" },
+    { "key": "aliceCustomerId", "value": "", "type": "string" },
+    { "key": "bobCustomerId", "value": "", "type": "string" },
     { "key": "fromAccountId", "value": "", "type": "string" },
     { "key": "toAccountId", "value": "", "type": "string" },
     { "key": "transferKey", "value": "", "type": "string" },
@@ -15,22 +19,59 @@
   ],
   "item": [
     {
-      "name": "Create Customer",
+      "name": "Register Customer (alice)",
       "event": [
+        { "listen": "prerequest", "script": { "type": "text/javascript", "exec": [
+          "pm.collectionVariables.set('aliceUsername', 'alice-' + pm.variables.replaceIn('{{$guid}}'));"
+        ] } },
         { "listen": "test", "script": { "type": "text/javascript", "exec": [
           "pm.test('status is 201 Created', () => pm.response.to.have.status(201));",
-          "pm.collectionVariables.set('customerId', pm.response.json().id);"
+          "const b = pm.response.json();",
+          "pm.test('role is CUSTOMER', () => pm.expect(b.role).to.eql('CUSTOMER'));",
+          "pm.collectionVariables.set('aliceCustomerId', b.customerId);"
         ] } }
       ],
       "request": {
         "method": "POST",
         "header": [ { "key": "Content-Type", "value": "application/json" } ],
-        "body": { "mode": "raw", "raw": "{\n  \"name\": \"Alice Example\",\n  \"email\": \"{{$randomEmail}}\"\n}" },
-        "url": { "raw": "{{baseUrl}}/customers", "host": [ "{{baseUrl}}" ], "path": [ "customers" ] }
+        "body": { "mode": "raw", "raw": "{\n  \"username\": \"{{aliceUsername}}\",\n  \"password\": \"alicepw123\",\n  \"name\": \"Alice Example\",\n  \"email\": \"{{$randomEmail}}\"\n}" },
+        "url": { "raw": "{{baseUrl}}/auth/register", "host": [ "{{baseUrl}}" ], "path": [ "auth", "register" ] }
       }
     },
     {
-      "name": "Create Account A (sender, balance 100)",
+      "name": "Register Customer (bob)",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": [
+          "pm.test('status is 201 Created', () => pm.response.to.have.status(201));",
+          "pm.collectionVariables.set('bobCustomerId', pm.response.json().customerId);"
+        ] } }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "body": { "mode": "raw", "raw": "{\n  \"username\": \"bob-{{$guid}}\",\n  \"password\": \"bobpw1234\",\n  \"name\": \"Bob Example\",\n  \"email\": \"{{$randomEmail}}\"\n}" },
+        "url": { "raw": "{{baseUrl}}/auth/register", "host": [ "{{baseUrl}}" ], "path": [ "auth", "register" ] }
+      }
+    },
+    {
+      "name": "Login as admin (seeded)",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": [
+          "pm.test('status is 200 OK', () => pm.response.to.have.status(200));",
+          "const b = pm.response.json();",
+          "pm.test('role is ADMIN', () => pm.expect(b.role).to.eql('ADMIN'));",
+          "pm.collectionVariables.set('adminToken', b.token);"
+        ] } }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "body": { "mode": "raw", "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin12345\"\n}" },
+        "url": { "raw": "{{baseUrl}}/auth/login", "host": [ "{{baseUrl}}" ], "path": [ "auth", "login" ] }
+      }
+    },
+    {
+      "name": "Admin: open account A for alice (balance 100)",
       "event": [
         { "listen": "test", "script": { "type": "text/javascript", "exec": [
           "pm.test('status is 201 Created', () => pm.response.to.have.status(201));",
@@ -39,13 +80,16 @@
       ],
       "request": {
         "method": "POST",
-        "header": [ { "key": "Content-Type", "value": "application/json" } ],
-        "body": { "mode": "raw", "raw": "{\n  \"customerId\": {{customerId}},\n  \"currency\": \"USD\",\n  \"initialBalance\": 100.00\n}" },
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"customerId\": {{aliceCustomerId}},\n  \"currency\": \"USD\",\n  \"initialBalance\": 100.00\n}" },
         "url": { "raw": "{{baseUrl}}/accounts", "host": [ "{{baseUrl}}" ], "path": [ "accounts" ] }
       }
     },
     {
-      "name": "Create Account B (receiver, balance 0)",
+      "name": "Admin: open account B for bob (balance 0)",
       "event": [
         { "listen": "test", "script": { "type": "text/javascript", "exec": [
           "pm.test('status is 201 Created', () => pm.response.to.have.status(201));",
@@ -54,118 +98,153 @@
       ],
       "request": {
         "method": "POST",
-        "header": [ { "key": "Content-Type", "value": "application/json" } ],
-        "body": { "mode": "raw", "raw": "{\n  \"customerId\": {{customerId}},\n  \"currency\": \"USD\"\n}" },
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"customerId\": {{bobCustomerId}},\n  \"currency\": \"USD\"\n}" },
         "url": { "raw": "{{baseUrl}}/accounts", "host": [ "{{baseUrl}}" ], "path": [ "accounts" ] }
       }
     },
     {
-      "name": "Create Transfer (A -> B, 30.00)",
-      "event": [
-        { "listen": "prerequest", "script": { "type": "text/javascript", "exec": [
-          "// Fresh idempotency key for this run; reused by 'Replay Transfer'.",
-          "pm.collectionVariables.set('transferKey', 'tx-' + pm.variables.replaceIn('{{$guid}}'));"
-        ] } },
-        { "listen": "test", "script": { "type": "text/javascript", "exec": [
-          "pm.test('status is 201 Created', () => pm.response.to.have.status(201));",
-          "const body = pm.response.json();",
-          "pm.collectionVariables.set('firstTransferId', body.id);",
-          "pm.test('sender balance is now 70', () => pm.expect(Number(body.fromBalance)).to.eql(70));",
-          "pm.test('receiver balance is now 30', () => pm.expect(Number(body.toBalance)).to.eql(30));"
-        ] } }
-      ],
-      "request": {
-        "method": "POST",
-        "header": [
-          { "key": "Content-Type", "value": "application/json" },
-          { "key": "Idempotency-Key", "value": "{{transferKey}}" }
-        ],
-        "body": { "mode": "raw", "raw": "{\n  \"fromAccount\": {{fromAccountId}},\n  \"toAccount\": {{toAccountId}},\n  \"amount\": 30.00\n}" },
-        "url": { "raw": "{{baseUrl}}/transfers", "host": [ "{{baseUrl}}" ], "path": [ "transfers" ] }
-      }
-    },
-    {
-      "name": "Replay Transfer (same key -> money moves once)",
+      "name": "Login as alice (customer)",
       "event": [
         { "listen": "test", "script": { "type": "text/javascript", "exec": [
-          "pm.test('status is 201 Created', () => pm.response.to.have.status(201));",
-          "const body = pm.response.json();",
-          "pm.test('same transfer id as the first call (replayed)', () => pm.expect(String(body.id)).to.eql(pm.collectionVariables.get('firstTransferId')));",
-          "pm.test('balances unchanged: money moved only once (70/30)', () => {",
-          "  pm.expect(Number(body.fromBalance)).to.eql(70);",
-          "  pm.expect(Number(body.toBalance)).to.eql(30);",
-          "});"
-        ] } }
-      ],
-      "request": {
-        "method": "POST",
-        "header": [
-          { "key": "Content-Type", "value": "application/json" },
-          { "key": "Idempotency-Key", "value": "{{transferKey}}" }
-        ],
-        "body": { "mode": "raw", "raw": "{\n  \"fromAccount\": {{fromAccountId}},\n  \"toAccount\": {{toAccountId}},\n  \"amount\": 30.00\n}" },
-        "url": { "raw": "{{baseUrl}}/transfers", "host": [ "{{baseUrl}}" ], "path": [ "transfers" ] }
-      }
-    },
-    {
-      "name": "Transfer - missing Idempotency-Key (-> 400)",
-      "event": [
-        { "listen": "test", "script": { "type": "text/javascript", "exec": [
-          "pm.test('status is 400 Bad Request', () => pm.response.to.have.status(400));"
+          "pm.test('status is 200 OK', () => pm.response.to.have.status(200));",
+          "pm.collectionVariables.set('customerToken', pm.response.json().token);"
         ] } }
       ],
       "request": {
         "method": "POST",
         "header": [ { "key": "Content-Type", "value": "application/json" } ],
-        "body": { "mode": "raw", "raw": "{\n  \"fromAccount\": {{fromAccountId}},\n  \"toAccount\": {{toAccountId}},\n  \"amount\": 5.00\n}" },
-        "url": { "raw": "{{baseUrl}}/transfers", "host": [ "{{baseUrl}}" ], "path": [ "transfers" ] }
+        "body": { "mode": "raw", "raw": "{\n  \"username\": \"{{aliceUsername}}\",\n  \"password\": \"alicepw123\"\n}" },
+        "url": { "raw": "{{baseUrl}}/auth/login", "host": [ "{{baseUrl}}" ], "path": [ "auth", "login" ] }
       }
     },
     {
-      "name": "Transfer - insufficient funds (-> 422)",
+      "name": "Alice: GET own account A (-> 200)",
       "event": [
         { "listen": "test", "script": { "type": "text/javascript", "exec": [
-          "pm.test('status is 422 Unprocessable Entity', () => pm.response.to.have.status(422));"
+          "pm.test('status is 200 OK', () => pm.response.to.have.status(200));"
+        ] } }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [ { "key": "Authorization", "value": "Bearer {{customerToken}}" } ],
+        "url": { "raw": "{{baseUrl}}/accounts/{{fromAccountId}}", "host": [ "{{baseUrl}}" ], "path": [ "accounts", "{{fromAccountId}}" ] }
+      }
+    },
+    {
+      "name": "Alice: transfer A -> B, 30.00 (-> 201)",
+      "event": [
+        { "listen": "prerequest", "script": { "type": "text/javascript", "exec": [
+          "pm.collectionVariables.set('transferKey', 'tx-' + pm.variables.replaceIn('{{$guid}}'));"
+        ] } },
+        { "listen": "test", "script": { "type": "text/javascript", "exec": [
+          "pm.test('status is 201 Created', () => pm.response.to.have.status(201));",
+          "const b = pm.response.json();",
+          "pm.collectionVariables.set('firstTransferId', b.id);",
+          "pm.test('sender balance is now 70', () => pm.expect(Number(b.fromBalance)).to.eql(70));"
         ] } }
       ],
       "request": {
         "method": "POST",
         "header": [
           { "key": "Content-Type", "value": "application/json" },
-          { "key": "Idempotency-Key", "value": "{{$guid}}" }
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+          { "key": "Idempotency-Key", "value": "{{transferKey}}" }
         ],
-        "body": { "mode": "raw", "raw": "{\n  \"fromAccount\": {{fromAccountId}},\n  \"toAccount\": {{toAccountId}},\n  \"amount\": 1000000.00\n}" },
+        "body": { "mode": "raw", "raw": "{\n  \"fromAccount\": {{fromAccountId}},\n  \"toAccount\": {{toAccountId}},\n  \"amount\": 30.00\n}" },
         "url": { "raw": "{{baseUrl}}/transfers", "host": [ "{{baseUrl}}" ], "path": [ "transfers" ] }
       }
     },
     {
-      "name": "Transfer - unknown account (-> 404)",
+      "name": "Alice: replay transfer (same key -> money once)",
       "event": [
         { "listen": "test", "script": { "type": "text/javascript", "exec": [
-          "pm.test('status is 404 Not Found', () => pm.response.to.have.status(404));"
+          "pm.test('status is 201 Created', () => pm.response.to.have.status(201));",
+          "const b = pm.response.json();",
+          "pm.test('same transfer id (replayed)', () => pm.expect(String(b.id)).to.eql(pm.collectionVariables.get('firstTransferId')));",
+          "pm.test('sender balance still 70 (money moved once)', () => pm.expect(Number(b.fromBalance)).to.eql(70));"
         ] } }
       ],
       "request": {
         "method": "POST",
         "header": [
           { "key": "Content-Type", "value": "application/json" },
-          { "key": "Idempotency-Key", "value": "{{$guid}}" }
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+          { "key": "Idempotency-Key", "value": "{{transferKey}}" }
         ],
-        "body": { "mode": "raw", "raw": "{\n  \"fromAccount\": {{fromAccountId}},\n  \"toAccount\": 999999,\n  \"amount\": 10.00\n}" },
+        "body": { "mode": "raw", "raw": "{\n  \"fromAccount\": {{fromAccountId}},\n  \"toAccount\": {{toAccountId}},\n  \"amount\": 30.00\n}" },
         "url": { "raw": "{{baseUrl}}/transfers", "host": [ "{{baseUrl}}" ], "path": [ "transfers" ] }
       }
     },
     {
-      "name": "Get Account A (after transfer)",
+      "name": "Alice: GET bob's account B (-> 403)",
       "event": [
         { "listen": "test", "script": { "type": "text/javascript", "exec": [
-          "pm.test('status is 200 OK', () => pm.response.to.have.status(200));",
-          "const body = pm.response.json();",
-          "pm.test('balance is 70', () => pm.expect(Number(body.balance)).to.eql(70));",
-          "pm.test('ledger has one DEBIT', () => {",
-          "  pm.expect(body.ledger).to.have.lengthOf(1);",
-          "  pm.expect(body.ledger[0].direction).to.eql('DEBIT');",
-          "});"
+          "pm.test('status is 403 Forbidden', () => pm.response.to.have.status(403));"
+        ] } }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [ { "key": "Authorization", "value": "Bearer {{customerToken}}" } ],
+        "url": { "raw": "{{baseUrl}}/accounts/{{toAccountId}}", "host": [ "{{baseUrl}}" ], "path": [ "accounts", "{{toAccountId}}" ] }
+      }
+    },
+    {
+      "name": "Alice: transfer FROM bob's account (-> 403)",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": [
+          "pm.test('status is 403 Forbidden', () => pm.response.to.have.status(403));"
+        ] } }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+          { "key": "Idempotency-Key", "value": "{{$guid}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"fromAccount\": {{toAccountId}},\n  \"toAccount\": {{fromAccountId}},\n  \"amount\": 10.00\n}" },
+        "url": { "raw": "{{baseUrl}}/transfers", "host": [ "{{baseUrl}}" ], "path": [ "transfers" ] }
+      }
+    },
+    {
+      "name": "Alice: POST /customers (staff-only -> 403)",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": [
+          "pm.test('status is 403 Forbidden', () => pm.response.to.have.status(403));"
+        ] } }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"name\": \"Nope\",\n  \"email\": \"nope@example.com\"\n}" },
+        "url": { "raw": "{{baseUrl}}/customers", "host": [ "{{baseUrl}}" ], "path": [ "customers" ] }
+      }
+    },
+    {
+      "name": "Alice: GET /admin/users (admin-only -> 403)",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": [
+          "pm.test('status is 403 Forbidden', () => pm.response.to.have.status(403));"
+        ] } }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [ { "key": "Authorization", "value": "Bearer {{customerToken}}" } ],
+        "url": { "raw": "{{baseUrl}}/admin/users", "host": [ "{{baseUrl}}" ], "path": [ "admin", "users" ] }
+      }
+    },
+    {
+      "name": "No token: GET account (-> 401)",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": [
+          "pm.test('status is 401 Unauthorized', () => pm.response.to.have.status(401));"
         ] } }
       ],
       "request": {
@@ -175,31 +254,17 @@
       }
     },
     {
-      "name": "Create Customer (invalid -> 400)",
+      "name": "Admin: GET /admin/users (-> 200)",
       "event": [
         { "listen": "test", "script": { "type": "text/javascript", "exec": [
-          "pm.test('status is 400 Bad Request', () => pm.response.to.have.status(400));",
-          "pm.test('reports field errors', () => pm.expect(pm.response.json()).to.have.property('fieldErrors'));"
-        ] } }
-      ],
-      "request": {
-        "method": "POST",
-        "header": [ { "key": "Content-Type", "value": "application/json" } ],
-        "body": { "mode": "raw", "raw": "{\n  \"name\": \"\",\n  \"email\": \"not-an-email\"\n}" },
-        "url": { "raw": "{{baseUrl}}/customers", "host": [ "{{baseUrl}}" ], "path": [ "customers" ] }
-      }
-    },
-    {
-      "name": "Get Account (unknown -> 404)",
-      "event": [
-        { "listen": "test", "script": { "type": "text/javascript", "exec": [
-          "pm.test('status is 404 Not Found', () => pm.response.to.have.status(404));"
+          "pm.test('status is 200 OK', () => pm.response.to.have.status(200));",
+          "pm.test('returns a list of users', () => pm.expect(pm.response.json()).to.be.an('array'));"
         ] } }
       ],
       "request": {
         "method": "GET",
-        "header": [],
-        "url": { "raw": "{{baseUrl}}/accounts/999999", "host": [ "{{baseUrl}}" ], "path": [ "accounts", "999999" ] }
+        "header": [ { "key": "Authorization", "value": "Bearer {{adminToken}}" } ],
+        "url": { "raw": "{{baseUrl}}/admin/users", "host": [ "{{baseUrl}}" ], "path": [ "admin", "users" ] }
       }
     }
   ]

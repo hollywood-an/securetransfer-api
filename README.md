@@ -25,7 +25,7 @@ AI fraud-triage layer with human-in-the-loop guardrails.
 
 ```bash
 # 1. Create your local secrets file from the template
-cp .env.example .env          # then edit .env and set a DB_PASSWORD
+cp .env.example .env          # then set DB_PASSWORD and JWT_SECRET in .env
 
 # 2. Start PostgreSQL (exposed on localhost:5433 to avoid clashing with any
 #    Postgres already running on the standard 5432)
@@ -46,30 +46,42 @@ On startup, Flyway applies the migrations in
 ## Configuration
 Secrets come from the environment, never from committed files:
 
-| Variable      | Used by                         | Notes                          |
-|---------------|---------------------------------|--------------------------------|
-| `DB_PASSWORD` | docker-compose **and** the app  | Local Postgres password        |
+| Variable      | Used by                        | Notes                                        |
+|---------------|--------------------------------|----------------------------------------------|
+| `DB_PASSWORD` | docker-compose **and** the app | Local Postgres password                      |
+| `JWT_SECRET`  | the app                        | Signing key for login tokens; **≥ 32 chars** |
+
+On first startup the app seeds two staff logins — `admin` and `teller` — with
+dev-default passwords (`admin12345` / `teller12345`); override via
+`ADMIN_PASSWORD` / `TELLER_PASSWORD`, and change them outside local dev. Public
+`POST /auth/register` only ever creates CUSTOMER accounts.
 
 ## Project status
 - [x] **Phase 0** — Project scaffold, Docker Postgres, Flyway schema (6 tables)
 - [x] **Phase 1** — Customers & accounts (create + read balance/ledger)
 - [x] **Phase 2** — Atomic, concurrency-safe transfers (double-entry ledger)
 - [x] **Phase 3** — Idempotency (Idempotency-Key replay protection)
-- [ ] Phase 4 — Auth & RBAC
+- [x] **Phase 4** — Auth & RBAC (JWT login, roles, ownership checks)
 - [ ] Phase 5 — Audit log
 - [ ] Phase 6 — Agentic fraud triage
 - [ ] Phase 7 — Integration tests
 - [ ] Phase 8 — CI/CD + deploy
 
 ## API endpoints
-Phases 1–2 (no authentication yet — Phase 4 adds JWT + roles):
+All endpoints except `/auth/**` require a JWT: log in, then send
+`Authorization: Bearer <token>` on each request.
 
-| Method | Path             | Purpose                                          |
-|--------|------------------|--------------------------------------------------|
-| POST   | `/customers`     | Create a customer                                |
-| POST   | `/accounts`      | Create an account for a customer                 |
-| GET    | `/accounts/{id}` | Get an account's balance + ledger history        |
-| POST   | `/transfers`     | Move money between accounts (atomic, row-locked) |
+| Method | Path             | Access       | Purpose                                        |
+|--------|------------------|--------------|------------------------------------------------|
+| POST   | `/auth/register` | public       | Self-service signup (creates a CUSTOMER)       |
+| POST   | `/auth/login`    | public       | Log in → returns a signed JWT                  |
+| POST   | `/customers`     | TELLER/ADMIN | Create a customer record                       |
+| POST   | `/accounts`      | TELLER/ADMIN | Open an account for a customer                 |
+| GET    | `/accounts/{id}` | owner/staff  | Balance + ledger (CUSTOMER: own accounts only) |
+| POST   | `/transfers`     | owner/staff  | Move money (CUSTOMER: from own account only)   |
+| GET    | `/admin/users`   | ADMIN        | List login accounts                            |
+
+Unauthenticated → `401`; authenticated but not allowed → `403`.
 
 `POST /transfers` **requires an `Idempotency-Key` header** (`400` if missing).
 The first request with a key processes the transfer and stores its response; a
@@ -90,5 +102,7 @@ A ready-to-run Postman collection is in
   `ledger_entries`, `audit_log`, `fraud_reviews`.
 - `V2__customers_and_account_constraints.sql` — adds the `customers` table and
   the `accounts → customers` foreign key.
+- `V3__users.sql` — adds the `users` table (login accounts: BCrypt password,
+  role, optional `customer_id` link).
 
 Money is `NUMERIC(19,4)`; the ledger and audit log are append-only.

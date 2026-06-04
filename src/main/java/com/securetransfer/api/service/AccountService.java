@@ -2,6 +2,7 @@ package com.securetransfer.api.service;
 
 import com.securetransfer.api.domain.Account;
 import com.securetransfer.api.domain.Customer;
+import com.securetransfer.api.error.ForbiddenException;
 import com.securetransfer.api.error.NotFoundException;
 import com.securetransfer.api.repository.AccountRepository;
 import com.securetransfer.api.repository.CustomerRepository;
@@ -61,9 +62,16 @@ public class AccountService {
      * DTOs inside the transaction so any lazy data is still reachable.
      */
     @Transactional(readOnly = true)
-    public AccountResponse getById(Long id) {
+    public AccountResponse getById(Long id, Long restrictToCustomerId) {
         Account account = accounts.findById(id)
                 .orElseThrow(() -> new NotFoundException("Account " + id + " not found"));
+
+        // A CUSTOMER (restrictToCustomerId != null) may only see their own
+        // accounts; staff (null) may see any.
+        if (restrictToCustomerId != null
+                && !account.getCustomer().getId().equals(restrictToCustomerId)) {
+            throw new ForbiddenException("You may only view your own accounts");
+        }
 
         List<LedgerEntryResponse> ledger =
                 ledgerEntries.findByAccountIdOrderByCreatedAtDescIdDesc(id).stream()
@@ -71,5 +79,19 @@ public class AccountService {
                         .toList();
 
         return AccountResponse.from(account, ledger);
+    }
+
+    /**
+     * Assert that {@code customerId} owns the account: 404 if the account doesn't
+     * exist, 403 if it belongs to someone else. Used to stop a CUSTOMER from
+     * transferring FROM an account that isn't theirs.
+     */
+    @Transactional(readOnly = true)
+    public void assertCustomerOwns(Long accountId, Long customerId) {
+        Account account = accounts.findById(accountId)
+                .orElseThrow(() -> new NotFoundException("Account " + accountId + " not found"));
+        if (!account.getCustomer().getId().equals(customerId)) {
+            throw new ForbiddenException("You may only transfer from your own accounts");
+        }
     }
 }

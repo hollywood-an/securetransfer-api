@@ -5,6 +5,7 @@ import com.securetransfer.api.web.dto.CreateCustomerRequest;
 import com.securetransfer.api.web.dto.CustomerResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -26,8 +27,10 @@ public class CustomerController {
         this.customerService = customerService;
     }
 
-    // POST /customers — create a customer. 201 Created on success.
+    // POST /customers — staff-only (a CUSTOMER gets 403). Self-service signup
+    // goes through POST /auth/register instead. 201 Created on success.
     @PostMapping
+    @PreAuthorize("hasAnyRole('TELLER', 'ADMIN')")
     @ResponseStatus(HttpStatus.CREATED)
     public CustomerResponse create(@Valid @RequestBody CreateCustomerRequest request) {
         return customerService.create(request);

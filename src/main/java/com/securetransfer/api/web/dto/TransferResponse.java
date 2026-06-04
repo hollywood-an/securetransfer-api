@@ -8,8 +8,14 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
 /**
- * What we send back after a transfer: the transfer record plus the resulting
- * balances of both accounts, so the caller can see the effect immediately.
+ * What we send back after a transfer: the transfer record plus the SENDER's
+ * resulting balance.
+ *
+ * We deliberately do NOT expose the recipient's balance. The caller owns (or is
+ * authorized for) the source account, so showing its balance is fine; but
+ * returning the destination account's balance would leak a third party's balance
+ * to the sender — a customer could otherwise read any account's balance by
+ * sending it a tiny amount.
  */
 public record TransferResponse(
         Long id,
@@ -18,19 +24,17 @@ public record TransferResponse(
         BigDecimal amount,
         TransferStatus status,
         OffsetDateTime createdAt,
-        BigDecimal fromBalance,
-        BigDecimal toBalance
+        BigDecimal fromBalance
 ) {
-    public static TransferResponse from(Transfer t, Account from, Account to) {
+    public static TransferResponse from(Transfer transfer, Account from) {
         return new TransferResponse(
-                t.getId(),
-                t.getFromAccount(),
-                t.getToAccount(),
-                t.getAmount(),
-                t.getStatus(),
-                t.getCreatedAt(),
-                from.getBalance(),
-                to.getBalance()
+                transfer.getId(),
+                transfer.getFromAccount(),
+                transfer.getToAccount(),
+                transfer.getAmount(),
+                transfer.getStatus(),
+                transfer.getCreatedAt(),
+                from.getBalance()
         );
     }
 }
