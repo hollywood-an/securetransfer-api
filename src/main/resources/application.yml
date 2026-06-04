@@ -6,6 +6,14 @@ spring:
   application:
     name: securetransfer-api
 
+  # --- JSON serialization (Jackson) ---
+  # Render all timestamps in UTC so API responses are consistent regardless of
+  # the server's local time zone. Without this, an OffsetDateTime fresh from the
+  # JVM shows the local offset (e.g. -07:00) while one read back from Postgres
+  # shows Z (UTC) — same instant, but inconsistent text. UTC everywhere fixes it.
+  jackson:
+    time-zone: UTC
+
   # --- Database connection ---
   # Must match the credentials in docker-compose.yml. The password is read
   # from the DB_PASSWORD environment variable and is intentionally NOT given
