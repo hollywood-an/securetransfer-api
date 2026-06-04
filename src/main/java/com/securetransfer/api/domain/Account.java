@@ -2,6 +2,8 @@ package com.securetransfer.api.domain;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -43,9 +45,14 @@ public class Account {
     @Column(nullable = false, precision = 19, scale = 4)
     private BigDecimal balance;
 
+    // Lifecycle status. An admin can FREEZE an account (Phase 5), which blocks
+    // transfers in or out of it. New accounts start ACTIVE.
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private AccountStatus status;
+
     // Optimistic-locking counter. Hibernate increments it on every update and
-    // refuses to save if another transaction changed the row first. We don't
-    // update balances until Phase 2, but the column is here and ready.
+    // refuses to save if another transaction changed the row first.
     @Version
     private Long version;
 
@@ -61,6 +68,7 @@ public class Account {
         this.customer = customer;
         this.currency = currency;
         this.balance = balance;
+        this.status = AccountStatus.ACTIVE;
     }
 
     /**
@@ -77,6 +85,20 @@ public class Account {
         this.balance = this.balance.add(amount);
     }
 
+    /** Freeze this account: an admin action that blocks transfers in or out. */
+    public void freeze() {
+        this.status = AccountStatus.FROZEN;
+    }
+
+    /** Unfreeze this account, returning it to normal ACTIVE service. */
+    public void unfreeze() {
+        this.status = AccountStatus.ACTIVE;
+    }
+
+    public boolean isFrozen() {
+        return this.status == AccountStatus.FROZEN;
+    }
+
     public Long getId() {
         return id;
     }
@@ -91,6 +113,10 @@ public class Account {
 
     public BigDecimal getBalance() {
         return balance;
+    }
+
+    public AccountStatus getStatus() {
+        return status;
     }
 
     public Long getVersion() {

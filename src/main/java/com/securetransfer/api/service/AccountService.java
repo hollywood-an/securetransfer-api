@@ -15,10 +15,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 /**
- * Business logic for accounts: creating them and reading them back (balance +
- * ledger history).
+ * Business logic for accounts: creating them, reading them back (balance +
+ * ledger), and admin freeze/unfreeze.
  */
 @Service
 public class AccountService {
@@ -26,13 +27,16 @@ public class AccountService {
     private final AccountRepository accounts;
     private final CustomerRepository customers;
     private final LedgerEntryRepository ledgerEntries;
+    private final AuditService auditService;
 
     public AccountService(AccountRepository accounts,
                           CustomerRepository customers,
-                          LedgerEntryRepository ledgerEntries) {
+                          LedgerEntryRepository ledgerEntries,
+                          AuditService auditService) {
         this.accounts = accounts;
         this.customers = customers;
         this.ledgerEntries = ledgerEntries;
+        this.auditService = auditService;
     }
 
     /** Create an account for an existing customer. */
@@ -55,11 +59,10 @@ public class AccountService {
     }
 
     /**
-     * Read an account's current balance plus its ledger history.
+     * Read an account's current balance, status, and ledger history.
      *
-     * readOnly = true tells Spring/Hibernate this transaction won't modify data
-     * (a small optimisation, and a clear signal of intent). We map entities to
-     * DTOs inside the transaction so any lazy data is still reachable.
+     * readOnly = true tells Spring/Hibernate this transaction won't modify data.
+     * We map entities to DTOs inside the transaction so lazy data is reachable.
      */
     @Transactional(readOnly = true)
     public AccountResponse getById(Long id, Long restrictToCustomerId) {
@@ -73,12 +76,7 @@ public class AccountService {
             throw new ForbiddenException("You may only view your own accounts");
         }
 
-        List<LedgerEntryResponse> ledger =
-                ledgerEntries.findByAccountIdOrderByCreatedAtDescIdDesc(id).stream()
-                        .map(LedgerEntryResponse::from)
-                        .toList();
-
-        return AccountResponse.from(account, ledger);
+        return AccountResponse.from(account, loadLedger(id));
     }
 
     /**
@@ -93,5 +91,36 @@ public class AccountService {
         if (!account.getCustomer().getId().equals(customerId)) {
             throw new ForbiddenException("You may only transfer from your own accounts");
         }
+    }
+
+    /**
+     * Freeze or unfreeze an account (an ADMIN action) and record it in the audit
+     * log — both in ONE transaction, so the status change and its audit entry
+     * commit together. {@code actor} is the authenticated admin's username.
+     */
+    @Transactional
+    public AccountResponse setFrozen(Long accountId, boolean frozen, String actor) {
+        Account account = accounts.findById(accountId)
+                .orElseThrow(() -> new NotFoundException("Account " + accountId + " not found"));
+
+        if (frozen) {
+            account.freeze();
+        } else {
+            account.unfreeze();
+        }
+
+        auditService.record(
+                actor,
+                frozen ? "ACCOUNT_FROZEN" : "ACCOUNT_UNFROZEN",
+                "account:" + accountId,
+                Map.of("accountId", accountId, "status", account.getStatus().name()));
+
+        return AccountResponse.from(account, loadLedger(accountId));
+    }
+
+    private List<LedgerEntryResponse> loadLedger(Long accountId) {
+        return ledgerEntries.findByAccountIdOrderByCreatedAtDescIdDesc(accountId).stream()
+                .map(LedgerEntryResponse::from)
+                .toList();
     }
 }

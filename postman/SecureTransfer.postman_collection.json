@@ -266,6 +266,94 @@
         "header": [ { "key": "Authorization", "value": "Bearer {{adminToken}}" } ],
         "url": { "raw": "{{baseUrl}}/admin/users", "host": [ "{{baseUrl}}" ], "path": [ "admin", "users" ] }
       }
+    },
+    {
+      "name": "Admin: freeze account A (-> 200, FROZEN)",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": [
+          "pm.test('status is 200 OK', () => pm.response.to.have.status(200));",
+          "pm.test('account is FROZEN', () => pm.expect(pm.response.json().status).to.eql('FROZEN'));"
+        ] } }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [ { "key": "Authorization", "value": "Bearer {{adminToken}}" } ],
+        "url": { "raw": "{{baseUrl}}/admin/accounts/{{fromAccountId}}/freeze", "host": [ "{{baseUrl}}" ], "path": [ "admin", "accounts", "{{fromAccountId}}", "freeze" ] }
+      }
+    },
+    {
+      "name": "Transfer from frozen account A (-> 409)",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": [
+          "pm.test('status is 409 Conflict', () => pm.response.to.have.status(409));"
+        ] } }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+          { "key": "Idempotency-Key", "value": "{{$guid}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"fromAccount\": {{fromAccountId}},\n  \"toAccount\": {{toAccountId}},\n  \"amount\": 1.00\n}" },
+        "url": { "raw": "{{baseUrl}}/transfers", "host": [ "{{baseUrl}}" ], "path": [ "transfers" ] }
+      }
+    },
+    {
+      "name": "Admin: GET /audit (-> 200, shows the freeze)",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": [
+          "pm.test('status is 200 OK', () => pm.response.to.have.status(200));",
+          "const body = pm.response.json();",
+          "pm.test('paginated with content', () => pm.expect(body.content).to.be.an('array'));",
+          "pm.test('most recent entry is the freeze by admin', () => {",
+          "  pm.expect(body.content.length).to.be.above(0);",
+          "  pm.expect(body.content[0].action).to.eql('ACCOUNT_FROZEN');",
+          "  pm.expect(body.content[0].actor).to.eql('admin');",
+          "});"
+        ] } }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [ { "key": "Authorization", "value": "Bearer {{adminToken}}" } ],
+        "url": {
+          "raw": "{{baseUrl}}/audit?action=ACCOUNT_FROZEN&page=0&size=20",
+          "host": [ "{{baseUrl}}" ],
+          "path": [ "audit" ],
+          "query": [
+            { "key": "action", "value": "ACCOUNT_FROZEN" },
+            { "key": "page", "value": "0" },
+            { "key": "size", "value": "20" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Customer: GET /audit (-> 403)",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": [
+          "pm.test('status is 403 Forbidden', () => pm.response.to.have.status(403));"
+        ] } }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [ { "key": "Authorization", "value": "Bearer {{customerToken}}" } ],
+        "url": { "raw": "{{baseUrl}}/audit", "host": [ "{{baseUrl}}" ], "path": [ "audit" ] }
+      }
+    },
+    {
+      "name": "Admin: unfreeze account A (-> 200, ACTIVE)",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": [
+          "pm.test('status is 200 OK', () => pm.response.to.have.status(200));",
+          "pm.test('account is ACTIVE again', () => pm.expect(pm.response.json().status).to.eql('ACTIVE'));"
+        ] } }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [ { "key": "Authorization", "value": "Bearer {{adminToken}}" } ],
+        "url": { "raw": "{{baseUrl}}/admin/accounts/{{fromAccountId}}/unfreeze", "host": [ "{{baseUrl}}" ], "path": [ "admin", "accounts", "{{fromAccountId}}", "unfreeze" ] }
+      }
     }
   ]
 }

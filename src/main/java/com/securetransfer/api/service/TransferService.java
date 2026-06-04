@@ -8,6 +8,7 @@ import com.securetransfer.api.domain.LedgerEntry;
 import com.securetransfer.api.domain.Transfer;
 import com.securetransfer.api.domain.TransferStatus;
 import com.securetransfer.api.error.BadRequestException;
+import com.securetransfer.api.error.ConflictException;
 import com.securetransfer.api.error.InsufficientFundsException;
 import com.securetransfer.api.error.NotFoundException;
 import com.securetransfer.api.repository.AccountRepository;
@@ -71,6 +72,14 @@ public class TransferService {
 
         Account from = fromId.equals(firstLocked.getId()) ? firstLocked : secondLocked;
         Account to = toId.equals(firstLocked.getId()) ? firstLocked : secondLocked;
+
+        // A frozen account can neither send nor receive money (Phase 5).
+        if (from.isFrozen()) {
+            throw new ConflictException("Account " + from.getId() + " is frozen");
+        }
+        if (to.isFrozen()) {
+            throw new ConflictException("Account " + to.getId() + " is frozen");
+        }
 
         // Same-currency transfers only — this system has no currency conversion.
         if (!from.getCurrency().equals(to.getCurrency())) {

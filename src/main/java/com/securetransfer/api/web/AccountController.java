@@ -2,6 +2,7 @@ package com.securetransfer.api.web;
 
 import com.securetransfer.api.security.AuthenticatedUser;
 import com.securetransfer.api.service.AccountService;
+import com.securetransfer.api.service.AuditService;
 import com.securetransfer.api.web.dto.AccountResponse;
 import com.securetransfer.api.web.dto.CreateAccountRequest;
 import jakarta.validation.Valid;
@@ -16,6 +17,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Map;
+
 /**
  * Web layer for accounts. All endpoints require authentication (see
  * SecurityConfig); the rules below add per-role authorization on top.
@@ -25,9 +28,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class AccountController {
 
     private final AccountService accountService;
+    private final AuditService auditService;
 
-    public AccountController(AccountService accountService) {
+    public AccountController(AccountService accountService, AuditService auditService) {
         this.accountService = accountService;
+        this.auditService = auditService;
     }
 
     // POST /accounts — opening an account is a staff action (TELLER/ADMIN).
@@ -43,6 +48,19 @@ public class AccountController {
     public AccountResponse getById(@PathVariable Long id,
                                    @AuthenticationPrincipal AuthenticatedUser currentUser) {
         Long restrictToCustomerId = currentUser.isCustomer() ? currentUser.getCustomerId() : null;
-        return accountService.getById(id, restrictToCustomerId);
+        AccountResponse account = accountService.getById(id, restrictToCustomerId);
+
+        // Sensitive action: a staff member (TELLER/ADMIN) viewing a customer's
+        // account is "viewing another user's data" — audit it. A customer viewing
+        // their OWN account is ordinary, so we don't log it.
+        if (!currentUser.isCustomer()) {
+            auditService.record(
+                    currentUser.getUsername(),
+                    "ACCOUNT_VIEWED",
+                    "account:" + id,
+                    Map.of("accountId", id, "ownerCustomerId", account.customerId()));
+        }
+
+        return account;
     }
 }
