@@ -69,7 +69,7 @@ model call), so everything still works end-to-end.
 - [x] **Phase 4** — Auth & RBAC (JWT login, roles, ownership checks)
 - [x] **Phase 5** — Audit log (append-only; account freeze; admin `GET /audit`)
 - [x] **Phase 6** — Agentic fraud triage (read-only agent, human-in-the-loop)
-- [ ] Phase 7 — Integration tests
+- [x] **Phase 7** — Integration tests (Testcontainers; HTTP + DB-state assertions)
 - [ ] Phase 8 — CI/CD + deploy
 
 ## API endpoints
