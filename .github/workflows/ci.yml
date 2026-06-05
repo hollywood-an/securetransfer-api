@@ -1,0 +1,33 @@
+# CI — runs the full test suite on every pull request to main.
+# Make this job a REQUIRED status check in branch protection so a red build
+# blocks the merge. Testcontainers works here because GitHub's ubuntu runners
+# ship with Docker, so the tests spin up a real throwaway Postgres.
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Build & test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up Java 25 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Run the full test suite
+        # No secrets needed: tests use Testcontainers for Postgres and a stubbed
+        # fraud agent (the real Anthropic API is never called in tests).
+        run: ./gradlew test --no-daemon
+
+      - name: Verify the Docker image builds
+        # Catches Dockerfile breakage on every PR (no push — just a build).
+        run: docker build -t securetransfer-api:ci .

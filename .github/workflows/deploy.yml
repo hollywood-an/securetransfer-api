@@ -1,0 +1,47 @@
+# Deploy — on merge to main, run the tests again, then (if tests pass) trigger
+# a Render deploy. Render builds the image from the Dockerfile and rolls it out.
+#
+# One-time setup to make the deploy live:
+#   1. In Render, create a Blueprint from this repo (it reads render.yaml).
+#   2. Set the dashboard secrets (ADMIN_PASSWORD, TELLER_PASSWORD, and optionally
+#      ANTHROPIC_API_KEY). JWT_SECRET and the DB vars are wired automatically.
+#   3. Copy the service's Deploy Hook URL and add it to this repo as the GitHub
+#      Actions secret RENDER_DEPLOY_HOOK_URL.
+# Until that secret is set, the deploy step safely no-ops (the workflow stays green).
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    name: Build & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Run the full test suite
+        run: ./gradlew test --no-daemon
+
+  deploy:
+    name: Deploy to Render
+    needs: test          # only deploy if the tests passed
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render deploy
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "RENDER_DEPLOY_HOOK_URL is not set — skipping deploy."
+            echo "Add it as a repo secret after connecting the Render Blueprint."
+            exit 0
+          fi
+          echo "Triggering Render deploy..."
+          curl -fsSL -X POST "$RENDER_DEPLOY_HOOK_URL"
+          echo "Render deploy triggered."

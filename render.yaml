@@ -1,0 +1,39 @@
+# Render Blueprint: one web service (built from the Dockerfile) + a managed
+# PostgreSQL database. Connect this repo as a Blueprint in the Render dashboard
+# and it provisions both. Deploys are triggered by the GitHub Actions deploy
+# workflow (autoDeploy is off) so a red test run never ships.
+
+services:
+  - type: web
+    name: securetransfer-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    autoDeploy: false        # GitHub Actions triggers the deploy after tests pass
+    envVars:
+      # --- Database: wired automatically from the managed Postgres below ---
+      - key: DB_HOST
+        fromDatabase: { name: securetransfer-db, property: host }
+      - key: DB_PORT
+        fromDatabase: { name: securetransfer-db, property: port }
+      - key: DB_NAME
+        fromDatabase: { name: securetransfer-db, property: database }
+      - key: DB_USERNAME
+        fromDatabase: { name: securetransfer-db, property: user }
+      - key: DB_PASSWORD
+        fromDatabase: { name: securetransfer-db, property: password }
+      # --- Secrets ---
+      - key: JWT_SECRET
+        generateValue: true  # Render generates a strong random value
+      - key: ADMIN_PASSWORD
+        sync: false          # set in the Render dashboard
+      - key: TELLER_PASSWORD
+        sync: false          # set in the Render dashboard
+      - key: ANTHROPIC_API_KEY
+        sync: false          # optional; blank => fraud agent uses the rules fallback
+
+databases:
+  - name: securetransfer-db
+    plan: free
+    databaseName: securetransfer
+    user: securetransfer

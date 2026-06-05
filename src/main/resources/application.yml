@@ -2,6 +2,11 @@
 # Central configuration for the Spring Boot app. Replaces the generated
 # application.properties (YAML is easier to read once config grows).
 
+# Listen on the platform-provided port when present (e.g. Render sets PORT),
+# else default to 8080 for local dev.
+server:
+  port: ${PORT:8080}
+
 spring:
   application:
     name: securetransfer-api
@@ -15,13 +20,14 @@ spring:
     time-zone: UTC
 
   # --- Database connection ---
-  # Must match the credentials in docker-compose.yml. The password is read
-  # from the DB_PASSWORD environment variable and is intentionally NOT given
-  # a default, so the app fails fast with a clear error if you forget to set
-  # it — secrets never live in this file. (See .env.example.)
+  # Host/port/name/user come from the environment with LOCAL defaults baked in,
+  # so local dev (docker-compose) just works while a deployed host (e.g. Render's
+  # managed Postgres) overrides them via DB_HOST/DB_PORT/DB_NAME/DB_USERNAME. The
+  # password has NO default, so the app fails fast if DB_PASSWORD is unset —
+  # secrets never live in this file. (See .env.example.)
   datasource:
-    url: jdbc:postgresql://localhost:5433/securetransfer   # 5433 -> docker-compose Postgres (5432 is a local native Postgres)
-    username: securetransfer
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:securetransfer}
+    username: ${DB_USERNAME:securetransfer}
     password: ${DB_PASSWORD}
 
   # --- JPA / Hibernate ---

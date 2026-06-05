@@ -1,5 +1,9 @@
 # SecureTransfer API
 
+[![CI](https://github.com/hollywood-an/securetransfer-api/actions/workflows/ci.yml/badge.svg)](https://github.com/hollywood-an/securetransfer-api/actions/workflows/ci.yml)
+
+<!-- Live URL (add after the first Render deploy): https://securetransfer-api.onrender.com -->
+
 A backend service for fictional bank accounts and transfers — built to be
 correct under the conditions that actually matter in finance: atomic
 transfers, a concurrency-safe and append-only double-entry ledger,
@@ -61,6 +65,27 @@ ever creates CUSTOMER accounts. `ANTHROPIC_API_KEY` is optional: if blank, the
 fraud-triage agent runs in a deterministic **rules-based fallback** mode (no
 model call), so everything still works end-to-end.
 
+For a deployed host, `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USERNAME` override
+the local defaults (the app composes the JDBC URL from them), and `PORT` (set by
+the platform) overrides the server port.
+
+## CI/CD & deployment
+- **`Dockerfile`** — multi-stage build (JDK 25 builder → JRE 25 runtime, non-root).
+- **`.github/workflows/ci.yml`** — on every pull request: runs the full test
+  suite (Testcontainers spins up a real Postgres on the runner) and verifies the
+  image builds. Make the **Build & test** job a required status check so a red
+  build blocks the merge.
+- **`.github/workflows/deploy.yml`** — on merge to `main`: re-runs the tests,
+  then (if green) triggers a Render deploy. It safely no-ops until the deploy
+  secret is set.
+- **`render.yaml`** — a Render Blueprint: a Docker web service + a managed
+  Postgres, with the DB env vars wired automatically and `JWT_SECRET` generated.
+
+**To go live on Render (one-time):** create a Blueprint from this repo; set
+`ADMIN_PASSWORD`, `TELLER_PASSWORD` (and optionally `ANTHROPIC_API_KEY`) in the
+dashboard; copy the service's **Deploy Hook URL** into the repo secret
+`RENDER_DEPLOY_HOOK_URL`. Then push to `main` → tests run → Render redeploys.
+
 ## Project status
 - [x] **Phase 0** — Project scaffold, Docker Postgres, Flyway schema (6 tables)
 - [x] **Phase 1** — Customers & accounts (create + read balance/ledger)
@@ -70,7 +95,7 @@ model call), so everything still works end-to-end.
 - [x] **Phase 5** — Audit log (append-only; account freeze; admin `GET /audit`)
 - [x] **Phase 6** — Agentic fraud triage (read-only agent, human-in-the-loop)
 - [x] **Phase 7** — Integration tests (Testcontainers; HTTP + DB-state assertions)
-- [ ] Phase 8 — CI/CD + deploy
+- [x] **Phase 8** — CI/CD (GitHub Actions test gate; Docker image; Render deploy)
 
 ## API endpoints
 All endpoints except `/auth/**` require a JWT: log in, then send

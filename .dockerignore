@@ -1,0 +1,13 @@
+# Keep the Docker build context small and never ship local junk or secrets.
+.git
+.github
+build
+.gradle
+.idea
+*.iml
+.env
+.env.*
+!.env.example
+postman
+*.md
+docker-compose.yml
