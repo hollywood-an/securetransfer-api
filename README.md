@@ -46,17 +46,20 @@ On startup, Flyway applies the migrations in
 ## Configuration
 Secrets come from the environment, never from committed files:
 
-| Variable          | Used by                        | Notes                                        |
-|-------------------|--------------------------------|----------------------------------------------|
-| `DB_PASSWORD`     | docker-compose **and** the app | Local Postgres password                      |
-| `JWT_SECRET`      | the app                        | Signing key for login tokens; **≥ 32 chars** |
-| `ADMIN_PASSWORD`  | the app                        | Password for the seeded `admin` login        |
-| `TELLER_PASSWORD` | the app                        | Password for the seeded `teller` login       |
+| Variable            | Used by                        | Notes                                          |
+|---------------------|--------------------------------|------------------------------------------------|
+| `DB_PASSWORD`       | docker-compose **and** the app | Local Postgres password                        |
+| `JWT_SECRET`        | the app                        | Signing key for login tokens; **≥ 32 chars**   |
+| `ADMIN_PASSWORD`    | the app                        | Password for the seeded `admin` login          |
+| `TELLER_PASSWORD`   | the app                        | Password for the seeded `teller` login         |
+| `ANTHROPIC_API_KEY` | the app                        | **Optional** — fraud agent; blank → fallback   |
 
-All four are **required** (no committed defaults) — the app fails fast if any is
-unset. On first startup it seeds two staff logins, `admin` and `teller`, using
-`ADMIN_PASSWORD` / `TELLER_PASSWORD`. Public `POST /auth/register` only ever
-creates CUSTOMER accounts.
+The first four are **required** (no committed defaults) — the app fails fast if
+any is unset. On first startup it seeds two staff logins, `admin` and `teller`,
+using `ADMIN_PASSWORD` / `TELLER_PASSWORD`. Public `POST /auth/register` only
+ever creates CUSTOMER accounts. `ANTHROPIC_API_KEY` is optional: if blank, the
+fraud-triage agent runs in a deterministic **rules-based fallback** mode (no
+model call), so everything still works end-to-end.
 
 ## Project status
 - [x] **Phase 0** — Project scaffold, Docker Postgres, Flyway schema (6 tables)
@@ -65,7 +68,7 @@ creates CUSTOMER accounts.
 - [x] **Phase 3** — Idempotency (Idempotency-Key replay protection)
 - [x] **Phase 4** — Auth & RBAC (JWT login, roles, ownership checks)
 - [x] **Phase 5** — Audit log (append-only; account freeze; admin `GET /audit`)
-- [ ] Phase 6 — Agentic fraud triage
+- [x] **Phase 6** — Agentic fraud triage (read-only agent, human-in-the-loop)
 - [ ] Phase 7 — Integration tests
 - [ ] Phase 8 — CI/CD + deploy
 
@@ -85,6 +88,9 @@ All endpoints except `/auth/**` require a JWT: log in, then send
 | POST   | `/admin/accounts/{id}/freeze`   | ADMIN | Freeze an account (blocks its transfers) |
 | POST   | `/admin/accounts/{id}/unfreeze` | ADMIN | Return an account to normal service      |
 | GET    | `/audit`         | ADMIN        | Audit log — filter by actor/action/date, paginated |
+| GET    | `/fraud-reviews`               | TELLER/ADMIN | Review queue (filter by `status`, paginated) |
+| GET    | `/fraud-reviews/{id}`          | TELLER/ADMIN | One review (rules + agent verdict)           |
+| POST   | `/fraud-reviews/{id}/decision` | TELLER/ADMIN | Record the human decision (APPROVE/HOLD/ESCALATE) |
 
 Unauthenticated → `401`; authenticated but not allowed → `403`.
 
@@ -92,6 +98,18 @@ Sensitive actions are recorded in an **append-only audit log** (separate from th
 money ledger): account freeze/unfreeze and staff viewing a customer's account.
 The actor is always the authenticated user, never client-supplied. A transfer
 touching a **frozen** account is rejected with `409`.
+
+### Fraud triage (Phase 6)
+Cheap rules **flag** (never block) a transfer — large amount, high velocity, or a
+brand-new payee — marking it `FLAGGED`; the money still moves. An **async** review
+then runs an AI agent (Anthropic SDK) given **three read-only tools**
+(`get_account`, `get_transaction_history`, `get_velocity_stats`) that returns a
+structured verdict (`risk_score` 0–100, reasoning, `recommended_action`),
+persisted to `fraud_reviews` and `audit_log`. **Guardrails:** the agent's tools
+are strictly read-only (it can look, never move money); it only *recommends*; a
+TELLER/ADMIN records the final decision (human-in-the-loop); its JSON output is
+validated before use; and with no API key it degrades to a deterministic
+rules-based verdict. The API key is read from the environment and never logged.
 
 `POST /transfers` **requires an `Idempotency-Key` header** (`400` if missing).
 The first request with a key processes the transfer and stores its response; a
@@ -116,5 +134,7 @@ A ready-to-run Postman collection is in
   role, optional `customer_id` link).
 - `V4__account_status.sql` — adds `accounts.status` (ACTIVE/FROZEN) for the
   admin freeze feature.
+- `V5__fraud_reviews_workflow.sql` — extends `fraud_reviews` with the review
+  workflow (status, flag reasons, agent model, and the human decision).
 
 Money is `NUMERIC(19,4)`; the ledger and audit log are append-only.

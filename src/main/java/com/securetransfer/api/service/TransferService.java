@@ -3,6 +3,7 @@ package com.securetransfer.api.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.securetransfer.api.domain.Account;
+import com.securetransfer.api.domain.FraudReview;
 import com.securetransfer.api.domain.LedgerDirection;
 import com.securetransfer.api.domain.LedgerEntry;
 import com.securetransfer.api.domain.Transfer;
@@ -11,17 +12,24 @@ import com.securetransfer.api.error.BadRequestException;
 import com.securetransfer.api.error.ConflictException;
 import com.securetransfer.api.error.InsufficientFundsException;
 import com.securetransfer.api.error.NotFoundException;
+import com.securetransfer.api.fraud.FraudRuleEvaluator;
+import com.securetransfer.api.fraud.TransferFlaggedEvent;
 import com.securetransfer.api.repository.AccountRepository;
+import com.securetransfer.api.repository.FraudReviewRepository;
 import com.securetransfer.api.repository.LedgerEntryRepository;
 import com.securetransfer.api.repository.TransferRepository;
 import com.securetransfer.api.web.dto.CreateTransferRequest;
 import com.securetransfer.api.web.dto.TransferResponse;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 /**
- * The core of the system: moving money safely, and recording the idempotency
- * result in the SAME transaction.
+ * The core of the system: moving money safely, recording the idempotency result
+ * in the SAME transaction, and FLAGGING (never blocking) suspicious transfers
+ * for fraud review.
  */
 @Service
 public class TransferService {
@@ -31,17 +39,26 @@ public class TransferService {
     private final LedgerEntryRepository ledgerEntries;
     private final IdempotencyService idempotency;
     private final ObjectMapper objectMapper;
+    private final FraudRuleEvaluator fraudRules;
+    private final FraudReviewRepository fraudReviews;
+    private final ApplicationEventPublisher events;
 
     public TransferService(AccountRepository accounts,
                            TransferRepository transfers,
                            LedgerEntryRepository ledgerEntries,
                            IdempotencyService idempotency,
-                           ObjectMapper objectMapper) {
+                           ObjectMapper objectMapper,
+                           FraudRuleEvaluator fraudRules,
+                           FraudReviewRepository fraudReviews,
+                           ApplicationEventPublisher events) {
         this.accounts = accounts;
         this.transfers = transfers;
         this.ledgerEntries = ledgerEntries;
         this.idempotency = idempotency;
         this.objectMapper = objectMapper;
+        this.fraudRules = fraudRules;
+        this.fraudReviews = fraudReviews;
+        this.events = events;
     }
 
     /**
@@ -50,8 +67,7 @@ public class TransferService {
      * @Transactional makes the whole method ONE transaction: the transfers row,
      * the two ledger rows, both balance updates, AND flipping the idempotency
      * key to COMPLETED with its response snapshot all commit together — or, if
-     * anything throws, all roll back together. The key is only ever "done" if
-     * the money actually moved.
+     * anything throws, all roll back together.
      */
     @Transactional
     public TransferResponse execute(String idempotencyKey, CreateTransferRequest request, String requestHash) {
@@ -93,11 +109,17 @@ public class TransferService {
                     "Account " + from.getId() + " has insufficient funds for this transfer");
         }
 
+        // Fraud rules: evaluate against PRIOR transfers (before saving this one).
+        // A flag does NOT block — it marks the transfer FLAGGED and queues a review.
+        List<String> flags = fraudRules.evaluate(fromId, toId, request.amount());
+        TransferStatus status = flags.isEmpty() ? TransferStatus.COMPLETED : TransferStatus.FLAGGED;
+
         // Record the transfer (linked to its idempotency key) so we have its id.
         Transfer transfer = transfers.save(new Transfer(
-                idempotencyKey, fromId, toId, request.amount(), TransferStatus.COMPLETED));
+                idempotencyKey, fromId, toId, request.amount(), status));
 
-        // Move the money.
+        // Move the money — a FLAGGED transfer still completes; flagging only
+        // queues a review, it never holds the funds.
         from.debit(request.amount());
         to.credit(request.amount());
 
@@ -106,6 +128,14 @@ public class TransferService {
                 transfer.getId(), from.getId(), LedgerDirection.DEBIT, request.amount()));
         ledgerEntries.save(new LedgerEntry(
                 transfer.getId(), to.getId(), LedgerDirection.CREDIT, request.amount()));
+
+        // If flagged, create the PENDING review row and publish an event. The
+        // event is handled only AFTER this transaction commits, on a background
+        // thread, so the async AI review never holds up this response.
+        if (!flags.isEmpty()) {
+            FraudReview review = fraudReviews.save(FraudReview.pending(transfer.getId(), flags));
+            events.publishEvent(new TransferFlaggedEvent(review.getId()));
+        }
 
         TransferResponse response = TransferResponse.from(transfer, from);
 

@@ -59,3 +59,16 @@ app:
     # are unset rather than ever baking a usable credential into committed config.
     admin-password: ${ADMIN_PASSWORD}
     teller-password: ${TELLER_PASSWORD}
+  # --- Fraud flagging rules (Phase 6) ---
+  fraud:
+    large-amount-threshold: 10000.00   # flag transfers at/above this amount
+    velocity-window-minutes: 60        # window for the velocity rule + stats
+    velocity-max-transfers: 3          # flag when the sender already has >= this many in the window
+  # --- Fraud-triage agent (Phase 6) ---
+  anthropic:
+    # API key from the environment. Blank → the agent runs in a deterministic
+    # rules-based FALLBACK mode (no model call), so the system works without a key.
+    api-key: ${ANTHROPIC_API_KEY:}
+    model: claude-haiku-4-5-20251001
+    max-tokens: 1024
+    max-tool-iterations: 5

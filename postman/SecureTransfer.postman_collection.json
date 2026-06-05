@@ -15,7 +15,8 @@
     { "key": "fromAccountId", "value": "", "type": "string" },
     { "key": "toAccountId", "value": "", "type": "string" },
     { "key": "transferKey", "value": "", "type": "string" },
-    { "key": "firstTransferId", "value": "", "type": "string" }
+    { "key": "firstTransferId", "value": "", "type": "string" },
+    { "key": "fraudReviewId", "value": "", "type": "string" }
   ],
   "item": [
     {
@@ -353,6 +354,90 @@
         "method": "POST",
         "header": [ { "key": "Authorization", "value": "Bearer {{adminToken}}" } ],
         "url": { "raw": "{{baseUrl}}/admin/accounts/{{fromAccountId}}/unfreeze", "host": [ "{{baseUrl}}" ], "path": [ "admin", "accounts", "{{fromAccountId}}", "unfreeze" ] }
+      }
+    },
+    {
+      "name": "Alice: large transfer A -> B 20000 (flagged, still completes)",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": [
+          "pm.test('status is 201 Created', () => pm.response.to.have.status(201));",
+          "pm.test('transfer is FLAGGED (large amount) but completed', () => pm.expect(pm.response.json().status).to.eql('FLAGGED'));"
+        ] } }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+          { "key": "Idempotency-Key", "value": "{{$guid}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"fromAccount\": {{fromAccountId}},\n  \"toAccount\": {{toAccountId}},\n  \"amount\": 20000.00\n}" },
+        "url": { "raw": "{{baseUrl}}/transfers", "host": [ "{{baseUrl}}" ], "path": [ "transfers" ] }
+      }
+    },
+    {
+      "name": "Admin: fraud-review queue (after a short wait for async review)",
+      "event": [
+        { "listen": "prerequest", "script": { "type": "text/javascript", "exec": [
+          "// the review runs asynchronously; give it a moment before polling",
+          "setTimeout(() => {}, 1500);"
+        ] } },
+        { "listen": "test", "script": { "type": "text/javascript", "exec": [
+          "pm.test('status is 200 OK', () => pm.response.to.have.status(200));",
+          "const body = pm.response.json();",
+          "pm.test('queue has at least one review', () => pm.expect(body.content.length).to.be.above(0));",
+          "const review = body.content[0];",
+          "pm.collectionVariables.set('fraudReviewId', review.id);",
+          "pm.test('review has a risk score and recommended action', () => {",
+          "  pm.expect(review).to.have.property('riskScore');",
+          "  pm.expect(['APPROVE','HOLD','ESCALATE']).to.include(review.recommendedAction);",
+          "});"
+        ] } }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [ { "key": "Authorization", "value": "Bearer {{adminToken}}" } ],
+        "url": {
+          "raw": "{{baseUrl}}/fraud-reviews?page=0&size=20",
+          "host": [ "{{baseUrl}}" ],
+          "path": [ "fraud-reviews" ],
+          "query": [ { "key": "page", "value": "0" }, { "key": "size", "value": "20" } ]
+        }
+      }
+    },
+    {
+      "name": "Customer: GET /fraud-reviews (-> 403)",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": [
+          "pm.test('status is 403 Forbidden', () => pm.response.to.have.status(403));"
+        ] } }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [ { "key": "Authorization", "value": "Bearer {{customerToken}}" } ],
+        "url": { "raw": "{{baseUrl}}/fraud-reviews", "host": [ "{{baseUrl}}" ], "path": [ "fraud-reviews" ] }
+      }
+    },
+    {
+      "name": "Teller: record human decision (HOLD -> DECIDED)",
+      "event": [
+        { "listen": "test", "script": { "type": "text/javascript", "exec": [
+          "pm.test('status is 200 OK', () => pm.response.to.have.status(200));",
+          "const b = pm.response.json();",
+          "pm.test('review is DECIDED with the human decision', () => {",
+          "  pm.expect(b.status).to.eql('DECIDED');",
+          "  pm.expect(b.humanDecision).to.eql('HOLD');",
+          "});"
+        ] } }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"decision\": \"HOLD\"\n}" },
+        "url": { "raw": "{{baseUrl}}/fraud-reviews/{{fraudReviewId}}/decision", "host": [ "{{baseUrl}}" ], "path": [ "fraud-reviews", "{{fraudReviewId}}", "decision" ] }
       }
     }
   ]
