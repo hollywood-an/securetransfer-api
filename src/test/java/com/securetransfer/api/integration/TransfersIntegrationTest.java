@@ -3,6 +3,7 @@ package com.securetransfer.api.integration;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.securetransfer.api.service.IdempotentTransferService;
@@ -78,6 +79,10 @@ class TransfersIntegrationTest extends IntegrationTestBase {
                         .contentType(APPLICATION_JSON)
                         .content(transferBody(accountA, accountB, "30.00")))
                 .andExpect(status().isCreated())
+                // Phase 4 IDOR fix: the sender sees their OWN balance, never the
+                // recipient's. Lock that in — toBalance must not be exposed.
+                .andExpect(jsonPath("$.fromBalance").exists())
+                .andExpect(jsonPath("$.toBalance").doesNotExist())
                 .andReturn().getResponse().getContentAsString();
 
         // The response exposes the SENDER's resulting balance only (no toBalance).
@@ -303,5 +308,77 @@ class TransfersIntegrationTest extends IntegrationTestBase {
         // next test's truncate boundary (NEW_PAYEE flagging may have queued one).
         awaitUntil(Duration.ofSeconds(5), () ->
                 count("SELECT count(*) FROM fraud_reviews WHERE status = 'PENDING'") == 0);
+    }
+
+    // ------------------------------------------------------------------
+    // 7. regression: transfers touching a FROZEN account are rejected (409)
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Transfers OUT OF and INTO a frozen account are rejected with 409 and move no money")
+    void frozenAccountRejectsTransfersBothWays() throws Exception {
+        String admin = adminToken();
+        TestCustomer customer = registerCustomer("grace", "pw-grace-123",
+                "Grace Example", "grace@example.com");
+        long frozen = createAccount(admin, customer.customerId(), "USD", new BigDecimal("100.00"));
+        long active = createAccount(admin, customer.customerId(), "USD", new BigDecimal("100.00"));
+
+        // Freeze one account (an ADMIN action) -> 200, status FROZEN.
+        mockMvc.perform(post("/admin/accounts/{id}/freeze", frozen)
+                        .header("Authorization", bearer(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("FROZEN"));
+
+        // OUT OF the frozen account -> 409 Conflict.
+        mockMvc.perform(post("/transfers")
+                        .header("Authorization", bearer(admin))
+                        .header("Idempotency-Key", newKey())
+                        .contentType(APPLICATION_JSON)
+                        .content(transferBody(frozen, active, "10.00")))
+                .andExpect(status().isConflict());
+
+        // INTO the frozen account -> 409 Conflict.
+        mockMvc.perform(post("/transfers")
+                        .header("Authorization", bearer(admin))
+                        .header("Idempotency-Key", newKey())
+                        .contentType(APPLICATION_JSON)
+                        .content(transferBody(active, frozen, "10.00")))
+                .andExpect(status().isConflict());
+
+        // --- DB: nothing moved; no transfer/ledger rows touch the frozen account ---
+        assertThat(balanceOf(frozen)).isEqualByComparingTo("100.0000");
+        assertThat(balanceOf(active)).isEqualByComparingTo("100.0000");
+        assertThat(count("SELECT count(*) FROM transfers WHERE from_account = ? OR to_account = ?",
+                frozen, frozen)).isZero();
+        assertThat(count("SELECT count(*) FROM ledger_entries WHERE account_id = ?", frozen)).isZero();
+    }
+
+    // ------------------------------------------------------------------
+    // 8. regression: a cross-currency transfer is rejected (400)
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("A transfer between different-currency accounts (USD -> EUR) is rejected with 400 and moves no money")
+    void crossCurrencyTransferReturns400() throws Exception {
+        String admin = adminToken();
+        TestCustomer customer = registerCustomer("heidi", "pw-heidi-123",
+                "Heidi Example", "heidi@example.com");
+        long usd = createAccount(admin, customer.customerId(), "USD", new BigDecimal("100.00"));
+        long eur = createAccount(admin, customer.customerId(), "EUR", new BigDecimal("50.00"));
+
+        // --- HTTP: 400 Bad Request — this system does no currency conversion ---
+        mockMvc.perform(post("/transfers")
+                        .header("Authorization", bearer(admin))
+                        .header("Idempotency-Key", newKey())
+                        .contentType(APPLICATION_JSON)
+                        .content(transferBody(usd, eur, "10.00")))
+                .andExpect(status().isBadRequest());
+
+        // --- DB: balances unchanged; no transfer/ledger rows written ---
+        assertThat(balanceOf(usd)).isEqualByComparingTo("100.0000");
+        assertThat(balanceOf(eur)).isEqualByComparingTo("50.0000");
+        assertThat(count("SELECT count(*) FROM transfers WHERE from_account = ?", usd)).isZero();
+        assertThat(count("SELECT count(*) FROM ledger_entries WHERE account_id = ? OR account_id = ?",
+                usd, eur)).isZero();
     }
 }

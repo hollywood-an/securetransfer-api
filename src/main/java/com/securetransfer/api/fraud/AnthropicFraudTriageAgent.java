@@ -17,6 +17,7 @@ import com.securetransfer.api.config.AnthropicProperties;
 import com.securetransfer.api.domain.RecommendedAction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -68,16 +69,34 @@ public class AnthropicFraudTriageAgent implements FraudTriageAgent {
     private final FraudToolExecutor toolExecutor;
     private final ObjectMapper objectMapper;
 
-    // The SDK client is created lazily on first use (only when a key is present),
-    // so the app starts fine — and tests run — with no API key configured.
+    // A pre-supplied client (for tests). Null in production, where the client is
+    // created lazily on first use (only when a key is present) — see client().
+    private final AnthropicClient injectedClient;
+
+    // The SDK client is created lazily on first use, so the app starts fine — and
+    // tests run — with no API key configured.
     private volatile AnthropicClient cachedClient;
 
+    @Autowired
     public AnthropicFraudTriageAgent(AnthropicProperties props,
                                      FraudToolExecutor toolExecutor,
                                      ObjectMapper objectMapper) {
+        this(props, toolExecutor, objectMapper, null);
+    }
+
+    /**
+     * Visible for testing: inject a stub/mock {@link AnthropicClient} so the
+     * tool-use loop and JSON-parsing path can be exercised without any network
+     * call. Production uses the 3-arg constructor above (injectedClient = null).
+     */
+    AnthropicFraudTriageAgent(AnthropicProperties props,
+                              FraudToolExecutor toolExecutor,
+                              ObjectMapper objectMapper,
+                              AnthropicClient injectedClient) {
         this.props = props;
         this.toolExecutor = toolExecutor;
         this.objectMapper = objectMapper;
+        this.injectedClient = injectedClient;
     }
 
     @Override
@@ -189,6 +208,9 @@ public class AnthropicFraudTriageAgent implements FraudTriageAgent {
     }
 
     private AnthropicClient client() {
+        if (injectedClient != null) {
+            return injectedClient; // test-supplied stub/mock; no network
+        }
         AnthropicClient c = cachedClient;
         if (c == null) {
             synchronized (this) {
