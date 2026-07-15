@@ -58,7 +58,7 @@ public class AnthropicFraudTriageAgent implements FraudTriageAgent {
 
             When you have enough information, respond with ONLY a JSON object (no prose,
             no markdown) of exactly this shape:
-            {"risk_score": <integer 0-100>, "reasoning": "<2-4 sentences>", "recommended_action": "APPROVE" | "HOLD" | "ESCALATE"}
+            {"risk_score": <integer 0-100>, "reasoning": "<2-4 sentences>"}
 
             Base risk_score on genuine signals: how large the amount is relative to the
             account's balance BEFORE this transfer (moving most of an account is a
@@ -70,7 +70,14 @@ public class AnthropicFraudTriageAgent implements FraudTriageAgent {
             serious laundering signature — several transfers kept just under the reporting
             threshold ("smurfing") — which is high-risk even between a customer's OWN
             accounts; do not dismiss it as legitimate just because it is same-customer.
-            APPROVE low risk, HOLD moderate risk, ESCALATE high risk.
+
+            Score with these anchors — the bank maps the score to an action automatically
+            (>=70 escalate, 40-69 hold, else approve), so score accurately and consistently
+            and do NOT output an action yourself:
+              0-39   low risk (looks legitimate — e.g. small, or same-customer to a known payee)
+              40-69  moderate risk (some concerning signals; a human should hold and check)
+              70-100 high risk (strong indicators: account draining, high velocity, a large
+                     transfer to a new external payee, or a laundering pattern like structuring)
             """;
 
     private final AnthropicProperties props;
@@ -214,21 +221,33 @@ public class AnthropicFraudTriageAgent implements FraudTriageAgent {
             }
             JsonNode node = objectMapper.readTree(text.substring(start, end + 1));
 
-            int riskScore = Math.max(0, Math.min(100, node.path("risk_score").asInt()));
-            String reasoning = node.path("reasoning").asText("");
-            RecommendedAction action =
-                    RecommendedAction.valueOf(node.path("recommended_action").asText().trim().toUpperCase());
-
-            // Defense in depth: the model advises, but a STRUCTURING (laundering)
-            // signal must never be AUTO-APPROVED, even if the model tries to. Clamp
-            // to at least HOLD so a human reviews it. HOLD does not block money — it
-            // only routes the transfer to the review queue.
-            if (ctx.flagReasons() != null
-                    && ctx.flagReasons().contains(FraudRuleEvaluator.STRUCTURING)
-                    && action == RecommendedAction.APPROVE) {
-                action = RecommendedAction.HOLD;
-                riskScore = Math.max(riskScore, 40); // keep score consistent with the HOLD band
+            // The model scores the risk; the bank's policy decides the action. If the
+            // score is missing or not a number, the verdict is unusable → rules fallback.
+            JsonNode scoreNode = node.path("risk_score");
+            if (!scoreNode.isNumber()) {
+                return FraudVerdict.fallback(ctx.flagReasons(),
+                        "Agent verdict had no numeric risk_score; used rules fallback.");
             }
+            // Read as a double before narrowing so an out-of-range value pins to 100
+            // instead of wrapping through a narrowing int cast (which could collapse a
+            // huge score to a small in-band value); round so a borderline float can't
+            // silently drop a risk band.
+            int riskScore = (int) Math.round(Math.max(0.0, Math.min(100.0, scoreNode.asDouble())));
+            String reasoning = node.path("reasoning").asText("");
+
+            // Defense in depth: a STRUCTURING (laundering) signal must never be
+            // auto-approved, even if the model scores it low. Floor the score into the
+            // HOLD band so the derived action routes it to a human. HOLD does not block
+            // money — it only queues the transfer for review.
+            if (ctx.flagReasons() != null
+                    && ctx.flagReasons().contains(FraudRuleEvaluator.STRUCTURING)) {
+                riskScore = Math.max(riskScore, RecommendedAction.HOLD_SCORE);
+            }
+
+            // Derive the action from the score via the fixed policy bands — the SAME
+            // mapping the rules fallback uses — so the same score always yields the same
+            // action (this is the fix for the score↔action inconsistency).
+            RecommendedAction action = RecommendedAction.fromScore(riskScore);
 
             return new FraudVerdict(riskScore, "AI_REVIEW", reasoning, action, props.getModel(), true);
         } catch (Exception e) {

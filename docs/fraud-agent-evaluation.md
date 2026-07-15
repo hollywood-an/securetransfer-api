@@ -141,6 +141,8 @@ The takeaway: the numeric band and the score → action mapping wobble enough th
 
 **Fix:** define fixed score bands for APPROVE / HOLD / ESCALATE with a small tiebreak zone near the escalation threshold, so borderline cases don't flip actions run-to-run.
 
+> **✅ Resolved.** The action is now a deterministic function of the score via fixed bands (`≥70 ESCALATE, ≥40 HOLD, else APPROVE`) shared by the AI and rules-fallback paths — the model scores the risk and reasoning, and the bank's policy derives the action, so the same score always yields the same action (72 is now unambiguously ESCALATE). The prompt also gives the model explicit score-band anchors for more consistent raw scores. *Limit:* a score that wobbles exactly across a band boundary can still flip — inherent to any threshold on a noisy score, and out of scope without cross-review hysteresis.
+
 ---
 
 ## What worked well
@@ -157,7 +159,7 @@ The takeaway: the numeric band and the score → action mapping wobble enough th
 
 Beyond the agent itself, this was a test of the *system's* safety posture, and it passed the parts that matter for a banking context: read-only agent tools, advisory-only recommendations, a human-in-the-loop queue, and an append-only audit trail. The weaknesses found are about *detection quality*, not about the agent being able to do something it shouldn't.
 
-Two of the three findings have since been fixed — the phantom-overdraft data bug (#2) and the structuring blind spot (#1), each with tests. The remaining one (#3, score→action banding) is tracked as follow-up work.
+All three findings have since been fixed, each with tests: the phantom-overdraft data bug (#2), the structuring blind spot (#1), and the score→action instability (#3, now a deterministic policy mapping).
 
 ---
 

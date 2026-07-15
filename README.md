@@ -143,8 +143,10 @@ Cheap rules **flag** (never block) a transfer — large amount, high velocity, o
 brand-new payee — marking it `FLAGGED`; the money still moves. An **async** review
 then runs an AI agent (Anthropic SDK) given **three read-only tools**
 (`get_account`, `get_transaction_history`, `get_velocity_stats`) that returns a
-structured verdict (`risk_score` 0–100, reasoning, `recommended_action`),
-persisted to `fraud_reviews` and `audit_log`. **Guardrails:** the agent's tools
+`risk_score` (0–100) and reasoning, from which a fixed policy derives the
+`recommended_action` (≥70 ESCALATE, ≥40 HOLD, else APPROVE) — so the same score
+always maps to the same action. The verdict is persisted to `fraud_reviews` and
+`audit_log`. **Guardrails:** the agent's tools
 are strictly read-only (it can look, never move money); it only *recommends*; a
 TELLER/ADMIN records the final decision (human-in-the-loop); its JSON output is
 validated before use; and with no API key it degrades to a deterministic
