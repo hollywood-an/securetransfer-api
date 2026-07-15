@@ -60,9 +60,14 @@ public class AnthropicFraudTriageAgent implements FraudTriageAgent {
             no markdown) of exactly this shape:
             {"risk_score": <integer 0-100>, "reasoning": "<2-4 sentences>", "recommended_action": "APPROVE" | "HOLD" | "ESCALATE"}
 
-            Base risk_score on genuine signals (amount vs. account balance and history,
-            velocity, whether the payee is new). APPROVE low risk, HOLD moderate risk,
-            ESCALATE high risk.
+            Base risk_score on genuine signals: how large the amount is relative to the
+            account's balance BEFORE this transfer (moving most of an account is a
+            draining signal), transaction history, velocity, and whether the payee is
+            new. IMPORTANT: a flagged transfer has ALREADY executed and passed a funds
+            check, so the balance returned by get_account is the CURRENT (post-transfer)
+            balance — never treat it as "insufficient funds" or an "overdraft" for the
+            transfer under review. APPROVE low risk, HOLD moderate risk, ESCALATE high
+            risk.
             """;
 
     private final AnthropicProperties props;
@@ -172,17 +177,28 @@ public class AnthropicFraudTriageAgent implements FraudTriageAgent {
     }
 
     private String buildUserPrompt(FraudContext ctx) {
+        String balanceBefore = ctx.fromAccountBalanceBeforeTransfer() == null
+                ? "unknown"
+                : ctx.fromAccountBalanceBeforeTransfer().toPlainString();
         return """
                 A transfer has been flagged for review.
                   transferId: %d
                   fromAccount: %d
                   toAccount: %d
                   amount: %s
+                  fromAccount balance BEFORE this transfer: %s
                   rules that fired: %s
+
+                Note: this transfer has ALREADY executed and passed a funds check, so the
+                sender had enough money at the time — it is NOT an overdraft. The balance
+                get_account returns is the CURRENT (post-transfer) balance, so never call a
+                low current balance "insufficient funds" for this transfer. To gauge how
+                much of the account this transfer moved, compare the amount against the
+                fromAccount balance BEFORE this transfer shown above.
 
                 Investigate with the tools, then return your JSON verdict.
                 """.formatted(ctx.transferId(), ctx.fromAccount(), ctx.toAccount(),
-                ctx.amount().toPlainString(), ctx.flagReasons());
+                ctx.amount().toPlainString(), balanceBefore, ctx.flagReasons());
     }
 
     /** Parse + VALIDATE the model's JSON. Anything off → rules fallback. */
@@ -228,7 +244,9 @@ public class AnthropicFraudTriageAgent implements FraudTriageAgent {
 
     private static Tool getAccountTool() {
         return buildTool("get_account",
-                "Look up an account's owner, currency, balance, and status (ACTIVE/FROZEN).",
+                "Look up an account's owner, currency, current balance (already reflects "
+                        + "completed transfers, including the one under review), and status "
+                        + "(ACTIVE/FROZEN).",
                 Map.of("accountId", Map.of("type", "integer", "description", "The account id to look up")),
                 List.of("accountId"));
     }

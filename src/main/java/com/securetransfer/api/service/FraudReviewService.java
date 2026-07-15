@@ -1,5 +1,6 @@
 package com.securetransfer.api.service;
 
+import com.securetransfer.api.domain.Account;
 import com.securetransfer.api.domain.FraudReview;
 import com.securetransfer.api.domain.FraudReviewStatus;
 import com.securetransfer.api.domain.RecommendedAction;
@@ -8,6 +9,7 @@ import com.securetransfer.api.error.ConflictException;
 import com.securetransfer.api.error.NotFoundException;
 import com.securetransfer.api.fraud.FraudContext;
 import com.securetransfer.api.fraud.FraudVerdict;
+import com.securetransfer.api.repository.AccountRepository;
 import com.securetransfer.api.repository.FraudReviewRepository;
 import com.securetransfer.api.repository.TransferRepository;
 import org.springframework.data.domain.Page;
@@ -15,6 +17,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
@@ -34,13 +37,16 @@ public class FraudReviewService {
 
     private final FraudReviewRepository reviews;
     private final TransferRepository transfers;
+    private final AccountRepository accounts;
     private final AuditService auditService;
 
     public FraudReviewService(FraudReviewRepository reviews,
                               TransferRepository transfers,
+                              AccountRepository accounts,
                               AuditService auditService) {
         this.reviews = reviews;
         this.transfers = transfers;
+        this.accounts = accounts;
         this.auditService = auditService;
     }
 
@@ -53,9 +59,21 @@ public class FraudReviewService {
         }
         Transfer transfer = transfers.findById(review.getTransferId())
                 .orElseThrow(() -> new NotFoundException("Transfer " + review.getTransferId() + " not found"));
+
+        // Reconstruct the sender's balance BEFORE this transfer. Money moves even
+        // when a transfer is flagged, so the account's live balance is already
+        // post-debit; the sender was debited exactly `amount`, so adding it back
+        // gives the balance excluding this transfer. Handing this to the agent
+        // stops it misreading the depleted post-debit balance as an "overdraft"
+        // and lets it judge how much of the account the transfer actually moved.
+        BigDecimal fromBalanceBefore = accounts.findById(transfer.getFromAccount())
+                .map(Account::getBalance)
+                .map(current -> current.add(transfer.getAmount()))
+                .orElse(null);
+
         return Optional.of(new FraudContext(
                 transfer.getId(), transfer.getFromAccount(), transfer.getToAccount(),
-                transfer.getAmount(), review.getFlagReasons()));
+                transfer.getAmount(), review.getFlagReasons(), fromBalanceBefore));
     }
 
     /**
