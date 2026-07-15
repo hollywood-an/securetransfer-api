@@ -66,8 +66,11 @@ public class AnthropicFraudTriageAgent implements FraudTriageAgent {
             new. IMPORTANT: a flagged transfer has ALREADY executed and passed a funds
             check, so the balance returned by get_account is the CURRENT (post-transfer)
             balance — never treat it as "insufficient funds" or an "overdraft" for the
-            transfer under review. APPROVE low risk, HOLD moderate risk, ESCALATE high
-            risk.
+            transfer under review. If the fired rules include STRUCTURING, treat it as a
+            serious laundering signature — several transfers kept just under the reporting
+            threshold ("smurfing") — which is high-risk even between a customer's OWN
+            accounts; do not dismiss it as legitimate just because it is same-customer.
+            APPROVE low risk, HOLD moderate risk, ESCALATE high risk.
             """;
 
     private final AnthropicProperties props;
@@ -215,6 +218,17 @@ public class AnthropicFraudTriageAgent implements FraudTriageAgent {
             String reasoning = node.path("reasoning").asText("");
             RecommendedAction action =
                     RecommendedAction.valueOf(node.path("recommended_action").asText().trim().toUpperCase());
+
+            // Defense in depth: the model advises, but a STRUCTURING (laundering)
+            // signal must never be AUTO-APPROVED, even if the model tries to. Clamp
+            // to at least HOLD so a human reviews it. HOLD does not block money — it
+            // only routes the transfer to the review queue.
+            if (ctx.flagReasons() != null
+                    && ctx.flagReasons().contains(FraudRuleEvaluator.STRUCTURING)
+                    && action == RecommendedAction.APPROVE) {
+                action = RecommendedAction.HOLD;
+                riskScore = Math.max(riskScore, 40); // keep score consistent with the HOLD band
+            }
 
             return new FraudVerdict(riskScore, "AI_REVIEW", reasoning, action, props.getModel(), true);
         } catch (Exception e) {

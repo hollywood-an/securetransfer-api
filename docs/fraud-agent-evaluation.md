@@ -24,10 +24,11 @@ Crucially, **the safety design held**: every flagged transfer went to a human re
 
 SecureTransfer's fraud system has two layers:
 
-1. **Deterministic rules** (`FraudRuleEvaluator`) that *flag* a transfer. There are three:
+1. **Deterministic rules** (`FraudRuleEvaluator`) that *flag* a transfer:
    - `LARGE_AMOUNT` — the transfer is at or above **$10,000**.
    - `HIGH_VELOCITY` — the sender already made **3 or more** sends in the last **60 minutes**.
    - `NEW_PAYEE` — this is the **first** transfer on this specific sender → receiver pair.
+   - `STRUCTURING` — **3 or more** sends kept just under the $10,000 line (the band `[$8,000, $10,000)`) within the window. *Added in response to this evaluation (see Finding #1); the run analyzed below predates it, so structuring is not among the flags in the results.*
 2. **The AI agent** (Phase 6). When a transfer is flagged, an asynchronous agent uses three **read-only** tools (look up an account, list an account's recent transfers — both incoming and outgoing, and compute velocity stats) to investigate, then returns a **risk score (0–100)** and a **recommended action** — `APPROVE`, `HOLD`, or `ESCALATE`. It only *recommends*; a human teller makes the final call, and every decision is logged.
 
 A key design fact that matters below: **money moves even when a transfer is flagged.** Flagging is advisory. The transfer debits and credits normally, the review happens afterward (`AFTER_COMMIT` — Spring only runs it once the transfer has durably committed to the database), and a human decides what to do. That is by design — but it has a side effect the agent trips over (see Finding #2).
@@ -114,6 +115,10 @@ The agent scored both **25 / APPROVE — the lowest scores in the entire run**, 
 
 **Fix:** add an explicit structuring signal — count a sender's sub-threshold transfers within the velocity window and surface "N transfers within $X of the reporting threshold" to the agent (or as a fourth rule). This is the single biggest capability gap.
 
+> **✅ Resolved.** Shipped as a fourth deterministic `STRUCTURING` rule: 3+ sends in the `[$8,000, $10,000)` band within the 60-minute window now flag, score 45 → HOLD in the rules fallback, and the agent's prompt now treats structuring as serious *even between a customer's own accounts*. As a hard safety floor, a structuring flag can never be auto-approved by the AI (clamped to at least HOLD). Covered by unit and end-to-end tests.
+>
+> *Scope (honest limits):* this v1 catches the **burst** shape — repeated near-threshold sends from **one account within the hour**. Slower drips paced over days, splitting into sub-$8,000 chunks, and fan-in across multiple mule accounts are known gaps, left as future work rather than overclaimed.
+
 ### 🟠 Finding #2 — Phantom overdrafts (a data-plumbing bug)
 
 On scenarios #5, #7, and #9, the agent justified a high score by claiming the sender had **"insufficient balance"** or an **"overdraft."** The verification judges proved this is *structurally impossible*: `TransferService` rejects any transfer where `balance < amount` **before** the transfer is ever saved or flagged. A transfer that reaches fraud review has, by definition, already cleared the funds check.
@@ -123,6 +128,8 @@ What's actually happening: because money moves even when flagged, by the time th
 So the agent lands the right *action* for the wrong *reason* — its scores on these cases ride a phantom signal rather than real fraud evidence.
 
 **Fix:** hand the agent a **pre-transfer balance snapshot** (or clearly label the field as "current balance, after this transfer"). This is a small, contained change to how the agent's account tool is populated, and it removes the fabricated reasoning in one move.
+
+> **✅ Resolved.** The agent now receives the sender's reconstructed pre-transfer balance plus a guardrail that a flagged transfer already passed its funds check. Verified live: the same drain now reasons *"moves 98% of sender's balance… fund drainage"* instead of inventing an overdraft.
 
 ### 🟠 Finding #3 — Scores aren't stable enough to auto-action
 
@@ -150,7 +157,7 @@ The takeaway: the numeric band and the score → action mapping wobble enough th
 
 Beyond the agent itself, this was a test of the *system's* safety posture, and it passed the parts that matter for a banking context: read-only agent tools, advisory-only recommendations, a human-in-the-loop queue, and an append-only audit trail. The weaknesses found are about *detection quality*, not about the agent being able to do something it shouldn't.
 
-Two of the three findings are small, concrete code changes (a pre-transfer balance field; a structuring signal) and are tracked as follow-up work.
+Two of the three findings have since been fixed — the phantom-overdraft data bug (#2) and the structuring blind spot (#1), each with tests. The remaining one (#3, score→action banding) is tracked as follow-up work.
 
 ---
 

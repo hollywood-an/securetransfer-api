@@ -24,6 +24,7 @@ public class FraudRuleEvaluator {
     public static final String LARGE_AMOUNT = "LARGE_AMOUNT";
     public static final String HIGH_VELOCITY = "HIGH_VELOCITY";
     public static final String NEW_PAYEE = "NEW_PAYEE";
+    public static final String STRUCTURING = "STRUCTURING";
 
     private final TransferRepository transfers;
     private final FraudProperties props;
@@ -53,6 +54,25 @@ public class FraudRuleEvaluator {
         // Rule 3: brand-new payee — no prior transfer on this sender→receiver pair.
         if (!transfers.existsByFromAccountAndToAccount(fromAccount, toAccount)) {
             reasons.add(NEW_PAYEE);
+        }
+
+        // Rule 4: structuring ("smurfing") — several sends kept JUST under the
+        // large-amount line in the window. A single such send isn't a large-amount
+        // transfer (that's Rule 1); the red flag is the REPEATED near-threshold
+        // pattern, which is how money is split to stay under a reporting threshold.
+        BigDecimal threshold = props.getLargeAmountThreshold();
+        if (amount.compareTo(threshold) < 0) { // a >= threshold send is LARGE_AMOUNT, not structuring
+            BigDecimal nearThresholdFloor =
+                    threshold.multiply(BigDecimal.ONE.subtract(props.getStructuringProximityRatio()));
+            boolean currentIsNearThreshold = amount.compareTo(nearThresholdFloor) >= 0;
+            if (currentIsNearThreshold) {
+                // PRIOR near-threshold sends in the same window (excludes the current one).
+                long priorNearThreshold = transfers.countOutgoingInAmountRangeSince(
+                        fromAccount, windowStart, nearThresholdFloor, threshold);
+                if (priorNearThreshold + 1 >= props.getStructuringMinTransfers()) {
+                    reasons.add(STRUCTURING);
+                }
+            }
         }
 
         return reasons;

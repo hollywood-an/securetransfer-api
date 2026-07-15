@@ -75,6 +75,9 @@ app:
     large-amount-threshold: 10000.00   # flag transfers at/above this amount
     velocity-window-minutes: 60        # window for the velocity rule + stats
     velocity-max-transfers: 3          # flag when the sender already has >= this many in the window
+    # Structuring ("smurfing"): repeated sends kept just under the large-amount line.
+    structuring-proximity-ratio: 0.20  # "near threshold" = within 20% below the line -> band [8000, 10000)
+    structuring-min-transfers: 3       # flag once the sender has >= this many near-threshold sends (incl. current) in the window
   # --- Fraud-triage agent (Phase 6) ---
   anthropic:
     # API key from the environment. Blank → the agent runs in a deterministic

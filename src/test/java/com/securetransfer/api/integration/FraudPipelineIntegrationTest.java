@@ -299,4 +299,58 @@ class FraudPipelineIntegrationTest extends IntegrationTestBase {
         assertThat(count("SELECT count(*) FROM fraud_reviews WHERE id = ?", unknownReviewId))
                 .isZero();
     }
+
+    // ------------------------------------------------------------------
+    // 6. structuring: repeated just-under-threshold sends flag STRUCTURING
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Repeated just-under-$10k sends flag STRUCTURING on the third one; the fallback holds it")
+    void repeatedSubThresholdSendsFlagStructuring() throws Exception {
+        String admin = adminToken();
+        TestCustomer customer = registerCustomer("frstruct", "pw-frstruct-123",
+                "Struct Example", "struct@example.com");
+        long a = createAccount(admin, customer.customerId(), "USD", new BigDecimal("100000.00"));
+        long b = createAccount(admin, customer.customerId(), "USD", new BigDecimal("0.00"));
+
+        // Send 1: first send to this payee -> NEW_PAYEE (flagged), not yet structuring
+        // (only 1 near-threshold send so far).
+        long t1 = postTransfer(admin, a, b, "9500.00");
+        awaitAgentCompleted(t1);
+        assertThat(flagReasonsFor(t1)).contains("NEW_PAYEE").doesNotContain("STRUCTURING");
+
+        // Send 2: known payee, still only two near-threshold sends counting this one
+        // -> below the min of 3 -> NOT flagged at all.
+        long t2 = postTransfer(admin, a, b, "9400.00");
+        assertThat(jdbc.queryForObject("SELECT status FROM transfers WHERE id = ?", String.class, t2))
+                .isEqualTo("COMPLETED");
+        assertThat(count("SELECT count(*) FROM fraud_reviews WHERE transfer_id = ?", t2)).isZero();
+
+        // Send 3: the third near-threshold send in the window -> STRUCTURING fires.
+        long t3 = postTransfer(admin, a, b, "9300.00");
+        assertThat(jdbc.queryForObject("SELECT status FROM transfers WHERE id = ?", String.class, t3))
+                .isEqualTo("FLAGGED");
+        awaitAgentCompleted(t3);
+
+        // --- DB: the flag is STRUCTURING alone (not LARGE_AMOUNT — it's under $10k —
+        // and not NEW_PAYEE — the payee is known by now) ---
+        assertThat(flagReasonsFor(t3))
+                .contains("STRUCTURING")
+                .doesNotContain("LARGE_AMOUNT", "NEW_PAYEE");
+
+        // --- DB: the rules fallback (tests have no AI key) weights STRUCTURING at 45 -> HOLD ---
+        Map<String, Object> review = jdbc.queryForMap(
+                "SELECT risk_score, recommended_action, agent_model "
+                        + "FROM fraud_reviews WHERE transfer_id = ?", t3);
+        assertThat(((Number) review.get("risk_score")).intValue()).isEqualTo(45);
+        assertThat(review.get("recommended_action")).isEqualTo("HOLD");
+        assertThat(review.get("agent_model")).isEqualTo("rules-fallback");
+    }
+
+    /** The flag_reasons JSON (as text) for the review attached to a given transfer. */
+    private String flagReasonsFor(long transferId) {
+        return jdbc.queryForObject(
+                "SELECT flag_reasons::text FROM fraud_reviews WHERE transfer_id = ?",
+                String.class, transferId);
+    }
 }

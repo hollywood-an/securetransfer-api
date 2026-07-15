@@ -33,4 +33,19 @@ public interface TransferRepository extends JpaRepository<Transfer, Long> {
             """)
     BigDecimal sumOutgoingSince(@Param("accountId") Long accountId,
                                 @Param("after") OffsetDateTime after);
+
+    /**
+     * Structuring rule: how many sends this account made since a cutoff whose
+     * amount falls in the near-threshold band [low, high). Used to detect several
+     * transfers kept just under the large-amount reporting line.
+     */
+    @Query("""
+            SELECT COUNT(t) FROM Transfer t
+            WHERE t.fromAccount = :accountId AND t.createdAt >= :after
+              AND t.amount >= :low AND t.amount < :high
+            """)
+    long countOutgoingInAmountRangeSince(@Param("accountId") Long accountId,
+                                         @Param("after") OffsetDateTime after,
+                                         @Param("low") BigDecimal low,
+                                         @Param("high") BigDecimal high);
 }
