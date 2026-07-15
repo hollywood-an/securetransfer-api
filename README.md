@@ -2,7 +2,9 @@
 
 [![CI](https://github.com/hollywood-an/securetransfer-api/actions/workflows/ci.yml/badge.svg)](https://github.com/hollywood-an/securetransfer-api/actions/workflows/ci.yml)
 
-<!-- Live URL (add after the first Render deploy): https://securetransfer-api.onrender.com -->
+**Live API:** [`securetransfer-api.onrender.com`](https://securetransfer-api.onrender.com) — deployed on Render.
+It's a JSON API with no homepage, so `GET /` returns `401`; use the `/auth/**` endpoints to start.
+_(Free tier: the first request after idle cold-starts in ~30–60s.)_
 
 A backend service for fictional bank accounts and transfers — built to be
 correct under the conditions that actually matter in finance: atomic
