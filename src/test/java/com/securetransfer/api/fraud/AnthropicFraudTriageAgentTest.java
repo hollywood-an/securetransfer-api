@@ -54,17 +54,19 @@ class AnthropicFraudTriageAgentTest {
     }
 
     @Test
-    @DisplayName("Drives the tool-use loop and parses a valid model verdict into an AI FraudVerdict")
+    @DisplayName("Drives the tool-use loop and DERIVES the action from the score (72 -> ESCALATE, ignoring the model's own action)")
     void parsesValidVerdictViaToolUseLoop() {
         FraudToolExecutor toolExecutor = mock(FraudToolExecutor.class);
         when(toolExecutor.execute(anyString(), anyMap()))
                 .thenReturn("{\"accountId\":2,\"balance\":\"100.00\",\"status\":\"ACTIVE\"}");
 
         // Turn 1: the model asks to call get_account. Turn 2: it returns the verdict JSON.
+        // Note the model's stray recommended_action (APPROVE) is IGNORED — the action is
+        // derived from the score, so score 72 -> ESCALATE regardless of what the model says.
         Message toolUse = toolUseMessage("get_account", "tool_1", "{\"accountId\":2}");
         Message verdict = textMessage(
                 "{\"risk_score\": 72, \"reasoning\": \"Large transfer to a brand-new payee.\","
-                        + " \"recommended_action\": \"HOLD\"}");
+                        + " \"recommended_action\": \"APPROVE\"}");
 
         AnthropicClient client = clientReturning(toolUse, verdict);
         AnthropicFraudTriageAgent agent =
@@ -73,12 +75,12 @@ class AnthropicFraudTriageAgentTest {
         FraudVerdict result = agent.triage(new FraudContext(
                 1L, 1L, 2L, new BigDecimal("25000.00"), List.of("LARGE_AMOUNT", "NEW_PAYEE")));
 
-        // The verdict came from the AI, parsed correctly.
+        // The verdict came from the AI; the score is the model's, the action is policy-derived.
         assertThat(result.fromAgent()).isTrue();
         assertThat(result.model()).isEqualTo("claude-test-model");
         assertThat(result.verdict()).isEqualTo("AI_REVIEW");
         assertThat(result.riskScore()).isEqualTo(72);
-        assertThat(result.recommendedAction()).isEqualTo(RecommendedAction.HOLD);
+        assertThat(result.recommendedAction()).isEqualTo(RecommendedAction.ESCALATE);
         assertThat(result.reasoning()).contains("brand-new payee");
 
         // The loop actually ran the requested read-only tool, then made a second call.
@@ -111,13 +113,13 @@ class AnthropicFraudTriageAgentTest {
     }
 
     @Test
-    @DisplayName("Falls back to rules when the model returns an invalid recommended_action")
-    void invalidActionFallsBackToRules() {
+    @DisplayName("Falls back to rules when the model's verdict has no numeric risk_score")
+    void malformedScoreFallsBackToRules() {
         FraudToolExecutor toolExecutor = mock(FraudToolExecutor.class);
 
-        // Single turn: the model answers immediately with a malformed verdict (bad action).
+        // Single turn: the model answers with a verdict whose risk_score is not a number.
         Message verdict = textMessage(
-                "{\"risk_score\": 30, \"reasoning\": \"ok\", \"recommended_action\": \"FREEZE_EVERYTHING\"}");
+                "{\"risk_score\": \"very high\", \"reasoning\": \"ok\"}");
 
         AnthropicClient client = clientReturning(verdict);
         AnthropicFraudTriageAgent agent =
@@ -126,7 +128,7 @@ class AnthropicFraudTriageAgentTest {
         FraudVerdict result = agent.triage(new FraudContext(
                 1L, 1L, 2L, new BigDecimal("50.00"), List.of("NEW_PAYEE")));
 
-        // Invalid enum -> fallback (NEW_PAYEE -> 20 -> APPROVE).
+        // Unusable score -> deterministic rules fallback (NEW_PAYEE -> 20 -> APPROVE).
         assertThat(result.fromAgent()).isFalse();
         assertThat(result.model()).isEqualTo("rules-fallback");
         assertThat(result.recommendedAction()).isEqualTo(RecommendedAction.APPROVE);
@@ -155,6 +157,27 @@ class AnthropicFraudTriageAgentTest {
         assertThat(result.reasoning()).contains("normal internal activity");
         assertThat(result.recommendedAction()).isEqualTo(RecommendedAction.HOLD);
         assertThat(result.riskScore()).isGreaterThanOrEqualTo(40);
+    }
+
+    @Test
+    @DisplayName("An out-of-range numeric score is clamped to 100 (not wrapped), so it escalates")
+    void hugeScoreClampsToEscalate() {
+        FraudToolExecutor toolExecutor = mock(FraudToolExecutor.class);
+
+        // 4294967296 = 2^32 would wrap to 0 via a narrowing int cast; the clamp must pin it to 100.
+        Message verdict = textMessage(
+                "{\"risk_score\": 4294967296, \"reasoning\": \"off the charts\"}");
+
+        AnthropicClient client = clientReturning(verdict);
+        AnthropicFraudTriageAgent agent =
+                new AnthropicFraudTriageAgent(props(), toolExecutor, objectMapper, client);
+
+        FraudVerdict result = agent.triage(new FraudContext(
+                1L, 1L, 2L, new BigDecimal("25000.00"), List.of("LARGE_AMOUNT")));
+
+        assertThat(result.fromAgent()).isTrue();
+        assertThat(result.riskScore()).isEqualTo(100);
+        assertThat(result.recommendedAction()).isEqualTo(RecommendedAction.ESCALATE);
     }
 
     // ----- helpers: a mock client returning canned Message responses in order -----

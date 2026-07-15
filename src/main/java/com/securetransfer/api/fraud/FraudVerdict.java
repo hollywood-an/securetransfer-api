@@ -41,9 +41,8 @@ public record FraudVerdict(
             }
         }
         score = Math.max(0, Math.min(100, score));
-        RecommendedAction action = score >= 70 ? RecommendedAction.ESCALATE
-                : score >= 40 ? RecommendedAction.HOLD
-                : RecommendedAction.APPROVE;
+        // Same fixed bands the AI path uses — one source of truth for score → action.
+        RecommendedAction action = RecommendedAction.fromScore(score);
         String reasoning = (note == null ? "" : note + " ")
                 + "Rules-based fallback verdict from flags: " + (flags == null ? List.of() : flags) + ".";
         return new FraudVerdict(score, "RULES_FALLBACK", reasoning, action, "rules-fallback", false);
