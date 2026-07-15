@@ -34,6 +34,11 @@ public record FraudVerdict(
             if (flags.contains(FraudRuleEvaluator.NEW_PAYEE)) {
                 score += 20;
             }
+            // Structuring is a serious laundering signature on its own — weight it
+            // like a large amount so it reaches at least HOLD without a model call.
+            if (flags.contains(FraudRuleEvaluator.STRUCTURING)) {
+                score += 45;
+            }
         }
         score = Math.max(0, Math.min(100, score));
         RecommendedAction action = score >= 70 ? RecommendedAction.ESCALATE

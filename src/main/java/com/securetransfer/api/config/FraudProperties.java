@@ -21,6 +21,20 @@ public class FraudProperties {
     /** Flag when the sender already made at least this many transfers in the window. */
     private int velocityMaxTransfers = 3;
 
+    /**
+     * Structuring ("smurfing"): a send counts as "near threshold" when its amount
+     * is within this ratio BELOW the large-amount threshold. 0.20 with a $10,000
+     * threshold means the band [$8,000, $10,000). Repeated sends in this band are
+     * the classic tell of splitting a sum to stay under the reporting line.
+     */
+    private BigDecimal structuringProximityRatio = new BigDecimal("0.20");
+
+    /**
+     * Flag STRUCTURING once the sender has at least this many near-threshold sends
+     * (counting the current one) within the velocity window.
+     */
+    private int structuringMinTransfers = 3;
+
     public BigDecimal getLargeAmountThreshold() {
         return largeAmountThreshold;
     }
@@ -43,5 +57,21 @@ public class FraudProperties {
 
     public void setVelocityMaxTransfers(int velocityMaxTransfers) {
         this.velocityMaxTransfers = velocityMaxTransfers;
+    }
+
+    public BigDecimal getStructuringProximityRatio() {
+        return structuringProximityRatio;
+    }
+
+    public void setStructuringProximityRatio(BigDecimal structuringProximityRatio) {
+        this.structuringProximityRatio = structuringProximityRatio;
+    }
+
+    public int getStructuringMinTransfers() {
+        return structuringMinTransfers;
+    }
+
+    public void setStructuringMinTransfers(int structuringMinTransfers) {
+        this.structuringMinTransfers = structuringMinTransfers;
     }
 }

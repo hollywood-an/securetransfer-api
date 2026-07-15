@@ -132,6 +132,31 @@ class AnthropicFraudTriageAgentTest {
         assertThat(result.recommendedAction()).isEqualTo(RecommendedAction.APPROVE);
     }
 
+    @Test
+    @DisplayName("A STRUCTURING flag is never auto-approved by the model — the AI verdict is clamped to at least HOLD")
+    void structuringFlagClampsApproveToHold() {
+        FraudToolExecutor toolExecutor = mock(FraudToolExecutor.class);
+
+        // The model tries to APPROVE despite the structuring flag; our safety floor overrides it.
+        Message verdict = textMessage(
+                "{\"risk_score\": 15, \"reasoning\": \"Looks like normal internal activity.\","
+                        + " \"recommended_action\": \"APPROVE\"}");
+
+        AnthropicClient client = clientReturning(verdict);
+        AnthropicFraudTriageAgent agent =
+                new AnthropicFraudTriageAgent(props(), toolExecutor, objectMapper, client);
+
+        FraudVerdict result = agent.triage(new FraudContext(
+                1L, 1L, 2L, new BigDecimal("9300.00"),
+                List.of(FraudRuleEvaluator.STRUCTURING, FraudRuleEvaluator.HIGH_VELOCITY)));
+
+        // Still the AI's verdict (reasoning preserved), but the action is clamped up.
+        assertThat(result.fromAgent()).isTrue();
+        assertThat(result.reasoning()).contains("normal internal activity");
+        assertThat(result.recommendedAction()).isEqualTo(RecommendedAction.HOLD);
+        assertThat(result.riskScore()).isGreaterThanOrEqualTo(40);
+    }
+
     // ----- helpers: a mock client returning canned Message responses in order -----
 
     private AnthropicClient clientReturning(Message first, Message... rest) {
