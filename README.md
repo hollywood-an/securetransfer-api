@@ -73,8 +73,8 @@ the platform) overrides the server port.
 - **`Dockerfile`** — multi-stage build (JDK 25 builder → JRE 25 runtime, non-root).
 - **`.github/workflows/ci.yml`** — on every pull request: runs the full test
   suite (Testcontainers spins up a real Postgres on the runner) and verifies the
-  image builds. Make the **Build & test** job a required status check so a red
-  build blocks the merge.
+  image builds. The **Build & test** job is a required status check on `master`,
+  so a red build blocks the merge.
 - **`.github/workflows/deploy.yml`** — on merge to `master`: re-runs the tests,
   then (if green) triggers a Render deploy. It safely no-ops until the deploy
   secret is set.
