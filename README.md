@@ -59,6 +59,7 @@ Secrets come from the environment, never from committed files:
 | `ADMIN_PASSWORD`    | the app                        | Password for the seeded `admin` login          |
 | `TELLER_PASSWORD`   | the app                        | Password for the seeded `teller` login         |
 | `ANTHROPIC_API_KEY` | the app                        | **Optional** — fraud agent; blank → fallback   |
+| `CORS_ALLOWED_ORIGINS` | the app                     | **Optional** — frontend origins; default `localhost:5173` |
 
 The first four are **required** (no committed defaults) — the app fails fast if
 any is unset. On first startup it seeds two staff logins, `admin` and `teller`,
@@ -98,6 +99,17 @@ dashboard; copy the service's **Deploy Hook URL** into the repo secret
 - [x] **Phase 6** — Agentic fraud triage (read-only agent, human-in-the-loop)
 - [x] **Phase 7** — Integration tests (Testcontainers; HTTP + DB-state assertions)
 - [x] **Phase 8** — CI/CD (GitHub Actions test gate; Docker image; Render deploy)
+- [x] **Phase 9** — Vite + React demo frontend (see [`frontend/`](./frontend))
+
+## Frontend (Phase 9)
+A small **Vite + React** teller console lives in [`frontend/`](./frontend) — a face
+for the API with four screens: login, account dashboard (balance + ledger),
+transfer (success + rejected states), and the **fraud-review queue** with the AI
+verdict and approve/hold/escalate (human-in-the-loop). Run it with
+`cd frontend && npm install && npm run dev`. Browsers require the backend to
+allow the frontend's origin — the backend permits `http://localhost:5173` by
+default (`app.cors.allowed-origins`); set `CORS_ALLOWED_ORIGINS` to add a
+deployed frontend URL.
 
 ## API endpoints
 All endpoints except `/auth/**` require a JWT: log in, then send
