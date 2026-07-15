@@ -75,7 +75,7 @@ the platform) overrides the server port.
   suite (Testcontainers spins up a real Postgres on the runner) and verifies the
   image builds. Make the **Build & test** job a required status check so a red
   build blocks the merge.
-- **`.github/workflows/deploy.yml`** — on merge to `main`: re-runs the tests,
+- **`.github/workflows/deploy.yml`** — on merge to `master`: re-runs the tests,
   then (if green) triggers a Render deploy. It safely no-ops until the deploy
   secret is set.
 - **`render.yaml`** — a Render Blueprint: a Docker web service + a managed
@@ -84,7 +84,7 @@ the platform) overrides the server port.
 **To go live on Render (one-time):** create a Blueprint from this repo; set
 `ADMIN_PASSWORD`, `TELLER_PASSWORD` (and optionally `ANTHROPIC_API_KEY`) in the
 dashboard; copy the service's **Deploy Hook URL** into the repo secret
-`RENDER_DEPLOY_HOOK_URL`. Then push to `main` → tests run → Render redeploys.
+`RENDER_DEPLOY_HOOK_URL`. Then push to `master` → tests run → Render redeploys.
 
 ## Project status
 - [x] **Phase 0** — Project scaffold, Docker Postgres, Flyway schema (6 tables)

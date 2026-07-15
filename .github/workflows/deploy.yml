@@ -1,4 +1,4 @@
-# Deploy — on merge to main, run the tests again, then (if tests pass) trigger
+# Deploy — on merge to master, run the tests again, then (if tests pass) trigger
 # a Render deploy. Render builds the image from the Dockerfile and rolls it out.
 #
 # One-time setup to make the deploy live:
@@ -13,7 +13,7 @@ name: Deploy
 
 on:
   push:
-    branches: [main]
+    branches: [master]
 
 jobs:
   test:

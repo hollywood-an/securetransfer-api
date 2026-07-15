@@ -1,4 +1,4 @@
-# CI — runs the full test suite on every pull request to main.
+# CI — runs the full test suite on every pull request to master.
 # Make this job a REQUIRED status check in branch protection so a red build
 # blocks the merge. Testcontainers works here because GitHub's ubuntu runners
 # ship with Docker, so the tests spin up a real throwaway Postgres.
@@ -7,7 +7,7 @@ name: CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [master]
 
 jobs:
   test:
