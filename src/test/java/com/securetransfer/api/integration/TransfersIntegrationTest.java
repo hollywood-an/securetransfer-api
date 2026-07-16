@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.securetransfer.api.domain.Tenant;
 import com.securetransfer.api.service.IdempotentTransferService;
 import com.securetransfer.api.web.dto.CreateTransferRequest;
 import com.securetransfer.api.web.dto.TransferResponse;
@@ -259,7 +260,7 @@ class TransfersIntegrationTest extends IntegrationTestBase {
         Runnable attempt = () -> {
             try {
                 release.await();
-                TransferResponse response = transferService.transfer(newKey(), request);
+                TransferResponse response = transferService.transfer(newKey(), request, Tenant.STAFF);
                 if (response != null) {
                     successes.incrementAndGet();
                 }

@@ -39,16 +39,18 @@ public class AccountController {
     @PostMapping
     @PreAuthorize("hasAnyRole('TELLER', 'ADMIN')")
     @ResponseStatus(HttpStatus.CREATED)
-    public AccountResponse create(@Valid @RequestBody CreateAccountRequest request) {
-        return accountService.create(request);
+    public AccountResponse create(@Valid @RequestBody CreateAccountRequest request,
+                                  @AuthenticationPrincipal AuthenticatedUser currentUser) {
+        return accountService.create(request, currentUser.getTenant());
     }
 
-    // GET /accounts/{id} — a CUSTOMER may only view their own accounts; staff any.
+    // GET /accounts/{id} — a CUSTOMER may only view their own accounts; staff any
+    // (within their own bank).
     @GetMapping("/{id}")
     public AccountResponse getById(@PathVariable Long id,
                                    @AuthenticationPrincipal AuthenticatedUser currentUser) {
         Long restrictToCustomerId = currentUser.isCustomer() ? currentUser.getCustomerId() : null;
-        AccountResponse account = accountService.getById(id, restrictToCustomerId);
+        AccountResponse account = accountService.getById(id, restrictToCustomerId, currentUser.getTenant());
 
         // Sensitive action: a staff member (TELLER/ADMIN) viewing a customer's
         // account is "viewing another user's data" — audit it. A customer viewing

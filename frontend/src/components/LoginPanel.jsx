@@ -20,7 +20,7 @@ export default function LoginPanel({ baseUrl, onLogin }) {
     })
     setBusy(false)
     if (ok) {
-      onLogin({ token: data.token, role: data.role, username })
+      onLogin({ token: data.token, role: data.role, username, tenant: data.tenant })
     } else {
       setError(data?.message || 'Login failed')
     }

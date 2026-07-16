@@ -37,6 +37,7 @@ body {
 .baseurl input { width: 300px; }
 .userchip { display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--border); padding: 6px 8px 6px 12px; border-radius: 999px; }
 .userchip .role { font-size: 11px; letter-spacing: .04em; color: var(--accent); background: var(--accent-ink); padding: 2px 8px; border-radius: 999px; }
+.userchip .demo-badge { font-size: 11px; letter-spacing: .04em; color: #f0b429; background: rgba(240, 180, 41, .12); border: 1px solid rgba(240, 180, 41, .35); padding: 2px 8px; border-radius: 999px; }
 
 /* --- layout --- */
 .content { margin-top: 6px; }

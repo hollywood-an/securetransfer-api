@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.securetransfer.api.domain.Role;
+import com.securetransfer.api.domain.Tenant;
 import com.securetransfer.api.domain.User;
 import com.securetransfer.api.fraud.FraudTriageAgent;
 import com.securetransfer.api.fraud.FraudVerdict;
@@ -122,8 +123,8 @@ public abstract class IntegrationTestBase {
     }
 
     private void seedStaff() {
-        userRepository.save(new User(ADMIN_USERNAME, passwordEncoder.encode(ADMIN_PASSWORD), Role.ADMIN, null));
-        userRepository.save(new User(TELLER_USERNAME, passwordEncoder.encode(TELLER_PASSWORD), Role.TELLER, null));
+        userRepository.save(new User(ADMIN_USERNAME, passwordEncoder.encode(ADMIN_PASSWORD), Role.ADMIN, null, Tenant.STAFF));
+        userRepository.save(new User(TELLER_USERNAME, passwordEncoder.encode(TELLER_PASSWORD), Role.TELLER, null, Tenant.STAFF));
     }
 
     // ----- HTTP / auth helpers -----

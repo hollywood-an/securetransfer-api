@@ -32,10 +32,10 @@ public class AdminController {
         this.accountService = accountService;
     }
 
-    // GET /admin/users — list all login accounts (ADMIN only).
+    // GET /admin/users — list the login accounts in the admin's bank (ADMIN only).
     @GetMapping("/users")
-    public List<UserResponse> listUsers() {
-        return authService.listUsers();
+    public List<UserResponse> listUsers(@AuthenticationPrincipal AuthenticatedUser admin) {
+        return authService.listUsers(admin.getTenant());
     }
 
     // POST /admin/accounts/{id}/freeze — freeze an account (blocks its transfers).
@@ -43,13 +43,13 @@ public class AdminController {
     @PostMapping("/accounts/{id}/freeze")
     public AccountResponse freeze(@PathVariable Long id,
                                   @AuthenticationPrincipal AuthenticatedUser admin) {
-        return accountService.setFrozen(id, true, admin.getUsername());
+        return accountService.setFrozen(id, true, admin.getUsername(), admin.getTenant());
     }
 
     // POST /admin/accounts/{id}/unfreeze — return an account to normal service.
     @PostMapping("/accounts/{id}/unfreeze")
     public AccountResponse unfreeze(@PathVariable Long id,
                                     @AuthenticationPrincipal AuthenticatedUser admin) {
-        return accountService.setFrozen(id, false, admin.getUsername());
+        return accountService.setFrozen(id, false, admin.getUsername(), admin.getTenant());
     }
 }

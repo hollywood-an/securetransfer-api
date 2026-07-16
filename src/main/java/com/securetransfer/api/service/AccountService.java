@@ -2,6 +2,7 @@ package com.securetransfer.api.service;
 
 import com.securetransfer.api.domain.Account;
 import com.securetransfer.api.domain.Customer;
+import com.securetransfer.api.domain.Tenant;
 import com.securetransfer.api.error.ForbiddenException;
 import com.securetransfer.api.error.NotFoundException;
 import com.securetransfer.api.repository.AccountRepository;
@@ -39,11 +40,14 @@ public class AccountService {
         this.auditService = auditService;
     }
 
-    /** Create an account for an existing customer. */
+    /** Create an account for an existing customer in the caller's bank. */
     @Transactional
-    public AccountResponse create(CreateAccountRequest request) {
-        // The owner must exist, or it's a 404 (not a 500).
+    public AccountResponse create(CreateAccountRequest request, Tenant tenant) {
+        // The owner must exist IN THE CALLER'S TENANT, or it's a 404. A customer
+        // in the other bank is treated as "not found" so one tenant can't attach
+        // an account to (or probe the ids of) the other's customers.
         Customer owner = customers.findById(request.customerId())
+                .filter(c -> c.getTenant() == tenant)
                 .orElseThrow(() -> new NotFoundException(
                         "Customer " + request.customerId() + " not found"));
 
@@ -52,7 +56,7 @@ public class AccountService {
                 ? BigDecimal.ZERO
                 : request.initialBalance();
 
-        Account saved = accounts.save(new Account(owner, request.currency(), initial));
+        Account saved = accounts.save(new Account(owner, request.currency(), initial, tenant));
 
         // A brand-new account has no ledger history yet.
         return AccountResponse.from(saved, List.of());
@@ -65,12 +69,13 @@ public class AccountService {
      * We map entities to DTOs inside the transaction so lazy data is reachable.
      */
     @Transactional(readOnly = true)
-    public AccountResponse getById(Long id, Long restrictToCustomerId) {
+    public AccountResponse getById(Long id, Long restrictToCustomerId, Tenant tenant) {
         Account account = accounts.findById(id)
+                .filter(a -> a.getTenant() == tenant) // cross-tenant → 404 (invisible)
                 .orElseThrow(() -> new NotFoundException("Account " + id + " not found"));
 
         // A CUSTOMER (restrictToCustomerId != null) may only see their own
-        // accounts; staff (null) may see any.
+        // accounts; staff (null) may see any in their own bank.
         if (restrictToCustomerId != null
                 && !account.getCustomer().getId().equals(restrictToCustomerId)) {
             throw new ForbiddenException("You may only view your own accounts");
@@ -85,8 +90,9 @@ public class AccountService {
      * transferring FROM an account that isn't theirs.
      */
     @Transactional(readOnly = true)
-    public void assertCustomerOwns(Long accountId, Long customerId) {
+    public void assertCustomerOwns(Long accountId, Long customerId, Tenant tenant) {
         Account account = accounts.findById(accountId)
+                .filter(a -> a.getTenant() == tenant) // cross-tenant → 404 (invisible)
                 .orElseThrow(() -> new NotFoundException("Account " + accountId + " not found"));
         if (!account.getCustomer().getId().equals(customerId)) {
             throw new ForbiddenException("You may only transfer from your own accounts");
@@ -99,8 +105,9 @@ public class AccountService {
      * commit together. {@code actor} is the authenticated admin's username.
      */
     @Transactional
-    public AccountResponse setFrozen(Long accountId, boolean frozen, String actor) {
+    public AccountResponse setFrozen(Long accountId, boolean frozen, String actor, Tenant tenant) {
         Account account = accounts.findById(accountId)
+                .filter(a -> a.getTenant() == tenant) // an admin can only act in its own bank
                 .orElseThrow(() -> new NotFoundException("Account " + accountId + " not found"));
 
         if (frozen) {

@@ -2,6 +2,7 @@ package com.securetransfer.api.service;
 
 import com.securetransfer.api.domain.Customer;
 import com.securetransfer.api.domain.Role;
+import com.securetransfer.api.domain.Tenant;
 import com.securetransfer.api.domain.User;
 import com.securetransfer.api.error.ConflictException;
 import com.securetransfer.api.error.UnauthorizedException;
@@ -52,22 +53,27 @@ public class AuthService {
      * Self-registration: creates a CUSTOMER user and a linked customer profile.
      * The role is ALWAYS CUSTOMER here — nobody can self-register as staff.
      * The password is stored only as a BCrypt hash.
+     *
+     * Public sign-ups land in the STAFF bank (the demo tenant is reachable only
+     * via the pre-seeded `demo` login, never self-registration). A CUSTOMER is
+     * further restricted to their own accounts, so they never see staff data.
      */
     @Transactional
     public UserResponse register(RegisterRequest request) {
         // Single generic message for both checks (and we never echo the value),
         // so registration can't reveal which usernames/emails are taken.
         if (users.existsByUsername(request.username())
-                || customers.existsByEmail(request.email())) {
+                || customers.existsByTenantAndEmail(Tenant.STAFF, request.email())) {
             throw new ConflictException(REGISTRATION_CONFLICT);
         }
 
-        Customer customer = customers.save(new Customer(request.name(), request.email()));
+        Customer customer = customers.save(new Customer(request.name(), request.email(), Tenant.STAFF));
         User user = users.save(new User(
                 request.username(),
                 passwordEncoder.encode(request.password()),
                 Role.CUSTOMER,
-                customer.getId()));
+                customer.getId(),
+                Tenant.STAFF));
 
         return UserResponse.from(user);
     }
@@ -95,12 +101,12 @@ public class AuthService {
 
         String token = jwtService.generate(user);
         return new AuthResponse(token, "Bearer", user.getUsername(), user.getRole(),
-                jwtService.expirationMinutes());
+                user.getTenant(), jwtService.expirationMinutes());
     }
 
-    /** All users — used by the ADMIN-only endpoint. */
+    /** Users in the caller's tenant — used by the ADMIN-only endpoint. */
     @Transactional(readOnly = true)
-    public List<UserResponse> listUsers() {
-        return users.findAll().stream().map(UserResponse::from).toList();
+    public List<UserResponse> listUsers(Tenant tenant) {
+        return users.findByTenant(tenant).stream().map(UserResponse::from).toList();
     }
 }

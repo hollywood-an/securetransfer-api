@@ -6,6 +6,7 @@ import com.securetransfer.api.domain.Account;
 import com.securetransfer.api.domain.FraudReview;
 import com.securetransfer.api.domain.LedgerDirection;
 import com.securetransfer.api.domain.LedgerEntry;
+import com.securetransfer.api.domain.Tenant;
 import com.securetransfer.api.domain.Transfer;
 import com.securetransfer.api.domain.TransferStatus;
 import com.securetransfer.api.error.BadRequestException;
@@ -70,7 +71,8 @@ public class TransferService {
      * anything throws, all roll back together.
      */
     @Transactional
-    public TransferResponse execute(String idempotencyKey, CreateTransferRequest request, String requestHash) {
+    public TransferResponse execute(String idempotencyKey, CreateTransferRequest request,
+                                    String requestHash, Tenant tenant) {
         Long fromId = request.fromAccount();
         Long toId = request.toAccount();
 
@@ -88,6 +90,17 @@ public class TransferService {
 
         Account from = fromId.equals(firstLocked.getId()) ? firstLocked : secondLocked;
         Account to = toId.equals(firstLocked.getId()) ? firstLocked : secondLocked;
+
+        // Tenant isolation: both accounts must belong to the CALLER'S bank. A
+        // cross-tenant id looks like "not found" (404) so one bank can't probe the
+        // other's account ids — and this check runs BEFORE any balance changes,
+        // so a rejected cross-tenant transfer moves no money.
+        if (from.getTenant() != tenant) {
+            throw new NotFoundException("Account " + from.getId() + " not found");
+        }
+        if (to.getTenant() != tenant) {
+            throw new NotFoundException("Account " + to.getId() + " not found");
+        }
 
         // A frozen account can neither send nor receive money (Phase 5).
         if (from.isFrozen()) {
@@ -116,7 +129,7 @@ public class TransferService {
 
         // Record the transfer (linked to its idempotency key) so we have its id.
         Transfer transfer = transfers.save(new Transfer(
-                idempotencyKey, fromId, toId, request.amount(), status));
+                idempotencyKey, fromId, toId, request.amount(), status, tenant));
 
         // Move the money — a FLAGGED transfer still completes; flagging only
         // queues a review, it never holds the funds.
@@ -133,7 +146,7 @@ public class TransferService {
         // event is handled only AFTER this transaction commits, on a background
         // thread, so the async AI review never holds up this response.
         if (!flags.isEmpty()) {
-            FraudReview review = fraudReviews.save(FraudReview.pending(transfer.getId(), flags));
+            FraudReview review = fraudReviews.save(FraudReview.pending(transfer.getId(), flags, tenant));
             events.publishEvent(new TransferFlaggedEvent(review.getId()));
         }
 

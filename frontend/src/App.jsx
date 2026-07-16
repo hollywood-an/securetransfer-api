@@ -11,7 +11,7 @@ const DEFAULT_API = import.meta.env.VITE_API_BASE || 'https://securetransfer-api
 
 export default function App() {
   const [baseUrl, setBaseUrl] = useState(DEFAULT_API)
-  const [auth, setAuth] = useState(null)         // { token, role, username } — kept in memory only
+  const [auth, setAuth] = useState(null)         // { token, role, username, tenant } — kept in memory only
   const [demo, setDemo] = useState(null)         // { customerId, accountA, accountB } from the seed button
   const [refreshKey, setRefreshKey] = useState(0) // bump to reload the fraud queue after a transfer
 
@@ -33,6 +33,7 @@ export default function App() {
             <div className="userchip">
               <span>{auth.username}</span>
               <span className="role">{auth.role}</span>
+              {auth.tenant === 'DEMO' && <span className="demo-badge" title="An isolated sandbox — not connected to the staff bank">DEMO BANK</span>}
               <button className="btn btn-ghost small" onClick={logout}>Sign out</button>
             </div>
           )}
