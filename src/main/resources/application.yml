@@ -7,6 +7,33 @@
 server:
   port: ${PORT:8080}
 
+# --- Actuator (operational endpoints) ---
+# Expose ONLY health + info publicly. Render points its health check at
+# /actuator/health, so a failed startup (or a lost DB connection) marks the
+# deploy unhealthy instead of silently serving errors. /actuator/info reports the
+# deployed commit (from Render's RENDER_GIT_COMMIT) so a deploy can be *verified*
+# as running the exact commit that was pushed. show-details=never keeps the public
+# health response to a bare UP/DOWN — no internals leaked.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+  info:
+    env:
+      enabled: true         # expose the info.* properties below
+
+info:
+  app:
+    name: securetransfer-api
+  git:
+    # Render sets these at runtime for a git-backed service; 'local' off-platform.
+    commit: ${RENDER_GIT_COMMIT:local}
+    branch: ${RENDER_GIT_BRANCH:local}
+
 spring:
   application:
     name: securetransfer-api

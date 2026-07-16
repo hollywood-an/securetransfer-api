@@ -1,13 +1,11 @@
-# Deploy — on merge to master, run the tests again, then (if tests pass) trigger
-# a Render deploy. Render builds the image from the Dockerfile and rolls it out.
+# Deploy verification — on push to master, re-run the tests, then VERIFY the
+# deploy. Render auto-deploys each commit natively (render.yaml autoDeploy: true);
+# this workflow confirms the live service actually came up running THIS commit and
+# is healthy, so a broken or hung deploy fails loudly instead of silently.
 #
-# One-time setup to make the deploy live:
-#   1. In Render, create a Blueprint from this repo (it reads render.yaml).
-#   2. Set the dashboard secrets (ADMIN_PASSWORD, TELLER_PASSWORD, and optionally
-#      ANTHROPIC_API_KEY). JWT_SECRET and the DB vars are wired automatically.
-#   3. Copy the service's Deploy Hook URL and add it to this repo as the GitHub
-#      Actions secret RENDER_DEPLOY_HOOK_URL.
-# Until that secret is set, the deploy step safely no-ops (the workflow stays green).
+# How the verification works: the app exposes the deployed commit at
+# /actuator/info (from Render's RENDER_GIT_COMMIT env var). We poll until the live
+# commit matches the pushed SHA and /actuator/health reports UP.
 
 name: Deploy
 
@@ -28,20 +26,42 @@ jobs:
       - name: Run the full test suite
         run: ./gradlew test --no-daemon
 
-  deploy:
-    name: Deploy to Render
-    needs: test          # only deploy if the tests passed
+  verify-deploy:
+    name: Verify the live deploy
+    needs: test          # only verify once the tests pass
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger Render deploy
+      - name: Wait for Render to serve this commit, then check health
         env:
-          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+          BASE: https://securetransfer-api.onrender.com
+          SHA: ${{ github.sha }}
         run: |
-          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
-            echo "RENDER_DEPLOY_HOOK_URL is not set — skipping deploy."
-            echo "Add it as a repo secret after connecting the Render Blueprint."
-            exit 0
+          echo "Verifying $BASE is running $SHA and healthy."
+          echo "(Render auto-deploys on commit; a free-tier Docker build + queue can take 20-30 min.)"
+          last_live=""
+          # ~40 min budget: free-tier builds can queue on top of a 10-20 min build.
+          for i in $(seq 1 120); do
+            info=$(curl -fsS -m 30 "$BASE/actuator/info" 2>/dev/null || true)
+            live=$(printf '%s' "$info" | jq -r '.git.commit // empty' 2>/dev/null || true)
+            [ -n "$live" ] && last_live="$live"
+            # Match full OR abbreviated: accept when the live commit is a prefix of the
+            # pushed SHA (github.sha is the full 40-char SHA; RENDER_GIT_COMMIT may be shorter).
+            if [ -n "$live" ] && [ "${SHA#"$live"}" != "$SHA" ]; then
+              status=$(curl -fsS -m 30 "$BASE/actuator/health" 2>/dev/null | jq -r '.status // empty' 2>/dev/null || true)
+              echo "attempt $i: live commit matches; health=$status"
+              if [ "$status" = "UP" ]; then
+                echo "::notice::Verified deploy — $SHA is live and healthy."
+                exit 0
+              fi
+            else
+              echo "attempt $i: live commit is '${live:-<none>}', want $SHA — waiting 20s"
+            fi
+            sleep 20
+          done
+          echo "::error::Timed out (~40 min). Last live commit seen: '${last_live:-<none>}' (wanted $SHA)."
+          if [ -n "$last_live" ] && [ "${SHA#"$last_live"}" = "$SHA" ]; then
+            echo "::warning::A different commit is live — a newer push may have superseded this one, or check the Render deploy / RENDER_GIT_COMMIT."
+          else
+            echo "The service never reported this commit — Render may still be building, the deploy failed, or the service is unreachable."
           fi
-          echo "Triggering Render deploy..."
-          curl -fsSL -X POST "$RENDER_DEPLOY_HOOK_URL"
-          echo "Render deploy triggered."
+          exit 1
