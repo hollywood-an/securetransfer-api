@@ -150,8 +150,13 @@ deployed frontend URL.
   suite (Testcontainers spins up a real Postgres on the runner) and verifies the
   Docker image builds. The **Build & test** job is a required status check on
   `master`, so a red build blocks the merge.
-- **`.github/workflows/deploy.yml`** — on merge to `master`: re-runs the tests,
-  then (if green) triggers a Render deploy.
+- **`.github/workflows/deploy.yml`** — on push to `master`: re-runs the tests,
+  then **verifies the deploy** — polls the live service until `/actuator/info`
+  reports the exact pushed commit (via Render's `RENDER_GIT_COMMIT`) and
+  `/actuator/health` is `UP`, so a broken or hung deploy fails the workflow loudly.
+- **Health checks** — `/actuator/health` (public) backs Render's `healthCheckPath`,
+  so a failed startup or a lost DB connection marks the deploy unhealthy instead of
+  silently serving errors.
 - **`.github/workflows/codeql.yml`** — CodeQL static security analysis on every
   push/PR and weekly.
 - **`.github/dependabot.yml`** — weekly dependency updates (Gradle, Actions,

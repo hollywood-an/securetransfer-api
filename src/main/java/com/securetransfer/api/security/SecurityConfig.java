@@ -64,6 +64,9 @@ public class SecurityConfig {
                         // and masked as a 401.
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                         .requestMatchers("/auth/**").permitAll()
+                        // Operational endpoints are public: Render's health check and
+                        // the deploy-verification step read these without a token.
+                        .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(authenticationEntryPoint)

@@ -1,7 +1,8 @@
 # Render Blueprint: one web service (built from the Dockerfile) + a managed
 # PostgreSQL database. Connect this repo as a Blueprint in the Render dashboard
-# and it provisions both. Deploys are triggered by the GitHub Actions deploy
-# workflow (autoDeploy is off) so a red test run never ships.
+# and it provisions both. Render auto-deploys on each push to master; the GitHub
+# Actions "Deploy" workflow then re-runs the tests and VERIFIES the live service
+# is running the pushed commit and is healthy.
 
 services:
   - type: web
@@ -9,7 +10,8 @@ services:
     runtime: docker
     dockerfilePath: ./Dockerfile
     plan: free
-    autoDeploy: false        # GitHub Actions triggers the deploy after tests pass
+    autoDeploy: true         # Render deploys on each push to the connected branch
+    healthCheckPath: /actuator/health  # a failed startup / lost DB marks the deploy unhealthy
     envVars:
       # --- Database: wired automatically from the managed Postgres below ---
       - key: DB_HOST
