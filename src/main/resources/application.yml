@@ -60,16 +60,21 @@ app:
     secret: ${JWT_SECRET}
     expiration-minutes: 60
   # --- CORS: which browser origins may call this API (Phase 9 frontend) ---
-  # Comma-separated. Defaults cover the local Vite dev server; override with the
-  # CORS_ALLOWED_ORIGINS env var to add a deployed frontend URL (e.g. Vercel).
+  # Comma-separated. Defaults cover the local Vite dev server AND the deployed
+  # Vercel demo; override with the CORS_ALLOWED_ORIGINS env var to add more.
   cors:
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:5174}
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:5174,https://securetransfer-demo.vercel.app,https://securetransfer-demo-frank-ans-projects.vercel.app}
   seed:
     # Passwords for the seeded staff logins (admin / teller). Read from the
     # environment with NO default — like JWT_SECRET, the app fails fast if these
     # are unset rather than ever baking a usable credential into committed config.
     admin-password: ${ADMIN_PASSWORD}
     teller-password: ${TELLER_PASSWORD}
+    # A TELLER login for the PUBLIC demo. This one INTENTIONALLY has a committed
+    # default because it is meant to be public: a TELLER cannot freeze accounts,
+    # read the audit log, or manage users (all ADMIN-only), so exposure is limited
+    # to throwaway demo data. Set DEMO_PASSWORD to blank to disable seeding it.
+    demo-password: ${DEMO_PASSWORD:demopass123}
   # --- Fraud flagging rules (Phase 6) ---
   fraud:
     large-amount-threshold: 10000.00   # flag transfers at/above this amount

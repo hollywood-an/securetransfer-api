@@ -7,9 +7,26 @@ A banking transactions backend built to be **correct under the conditions that
 actually matter in finance** — and then **adversarially tested to prove it**.
 Java 25 · Spring Boot 3.5 · PostgreSQL.
 
-**Live API:** [`securetransfer-api.onrender.com`](https://securetransfer-api.onrender.com)
-— it's a JSON API (no homepage, so `GET /` returns `401`); start with the
-`/auth/**` endpoints. _Free tier: the first request after idle cold-starts in ~30–60s._
+## 🚀 Live demo
+
+**[securetransfer-demo.vercel.app](https://securetransfer-demo.vercel.app)** — a teller
+console for the API: login, account dashboard + ledger, transfers, and the AI
+**fraud-review queue**. Sign in with the public demo staff login:
+
+| Username | Password |
+|----------|----------|
+| `demo`   | `demopass123` |
+
+Then: **Seed demo** (creates a customer + two accounts) → send a transfer of
+**≥ $10,000** to trip a fraud flag → watch it land in **Fraud reviews** with the
+AI's score, reasoning, and your Approve / Hold / Escalate call.
+
+_(The `demo` login is an intentionally-public **TELLER** — it can't freeze accounts,
+read the audit log, or manage users. The backend is on Render's free tier, so the
+first request after idle cold-starts in ~30–60s.)_
+
+**Raw API:** [`securetransfer-api.onrender.com`](https://securetransfer-api.onrender.com)
+(JSON only — `GET /` returns `401`; start with `/auth/**`).
 
 ## Why this isn't another CRUD banking app
 
