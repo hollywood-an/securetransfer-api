@@ -31,10 +31,10 @@ first request after idle cold-starts in ~30–60s.)_
 ## Why this isn't another CRUD banking app
 
 - **Atomic double-entry money movement** — every transfer debits, credits, and writes two ledger rows that net to zero, inside one transaction; the ledger and audit log are append-only.
-- **Concurrency-safe by construction** — pessimistic row locks (`SELECT … FOR UPDATE`) acquired in ascending account-id order, so opposing transfers can't deadlock and no balance can be corrupted by a race.
+- **Concurrency-safe — and measured** — pessimistic row locks (`SELECT … FOR UPDATE`) acquired in ascending account-id order, so opposing transfers can't deadlock. A [load test](docs/load-test.md) fires **300 concurrent contended transfers** and asserts the accounts land on the **exact** expected balances (0 lost updates), p95 ≈ 160 ms — plus a duplicate-key race that charges **exactly once** and a funds-check race that **can't be overdrawn**.
 - **Idempotent payments as a real protocol** — `Idempotency-Key` required on every transfer; replays return the stored result, an in-flight duplicate gets `409`, and reusing a key with a *different body* is rejected.
 - **AI fraud triage with hard guardrails** — an Anthropic-SDK agent investigates flagged transfers with **read-only tools**, its score maps to an action through a **deterministic policy** (never the model's whim), and a human always makes the final call.
-- **70 tests across 17 classes** — including Testcontainers integration suites that assert both the HTTP response *and* the resulting database state (exact balances, ledger rows netting to zero) against a real Postgres.
+- **75 tests across 19 classes** — including Testcontainers integration suites that assert both the HTTP response *and* the resulting database state (exact balances, ledger rows netting to zero) against a real Postgres, plus a concurrency stress test.
 - **CI-gated delivery** — every PR must pass the full suite (required status check) before merge; merges to `master` deploy to Render. Dependabot + CodeQL run continuously.
 
 ## 🔍 I red-teamed my own fraud agent
