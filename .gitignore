@@ -42,3 +42,6 @@ out/
 
 ### Maven output (in case of a mixed build) ###
 target/
+
+### Portfolio roadmap — kept locally, intentionally not published ###
+SecureTransfer-API-Build-Plan.md

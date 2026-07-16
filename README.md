@@ -12,9 +12,7 @@ transfers, a concurrency-safe and append-only double-entry ledger,
 idempotent payments, role-based access, an immutable audit trail, and an
 AI fraud-triage layer with human-in-the-loop guardrails.
 
-> Built as a portfolio flagship project. The full roadmap is in
-> [`SecureTransfer-API-Build-Plan.md`](./SecureTransfer-API-Build-Plan.md),
-> built in phases, one at a time.
+> Built as a portfolio flagship project, developed in phases, one at a time.
 
 ## Stack
 - **Java 25**, **Spring Boot 3.5** (Web, Data JPA, Security, Validation)
