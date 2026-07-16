@@ -1,0 +1,24 @@
+# Dependabot — automated dependency updates.
+# Opens a PR when a dependency has a newer (especially security-patched) version.
+# Each PR runs the normal CI gate, so an update that breaks the tests can't merge.
+version: 2
+updates:
+  # Java dependencies (build.gradle)
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # The GitHub Actions used in our workflows (checkout, setup-java, ...)
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  # The frontend's npm dependencies
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

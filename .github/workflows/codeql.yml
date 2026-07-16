@@ -1,0 +1,38 @@
+# CodeQL — GitHub's static security analysis (SAST).
+# Scans the Java code for known-vulnerable patterns (injection, path traversal,
+# hard-coded secrets, ...) on every push/PR to master and weekly. Findings appear
+# under the repo's Security tab. build-mode: none analyzes the source directly,
+# so no Java toolchain/Gradle build is needed on the runner.
+
+name: CodeQL
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  schedule:
+    - cron: '30 8 * * 1' # weekly, Monday 08:30 UTC — catches newly-published query updates
+
+jobs:
+  analyze:
+    name: Analyze (Java)
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write # upload findings to the Security tab
+      contents: read
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: java-kotlin
+          build-mode: none
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: '/language:java-kotlin'
