@@ -45,6 +45,12 @@ public class Transfer {
     @Column(nullable = false, length = 20)
     private TransferStatus status;
 
+    // Which bank this transfer belongs to. Both accounts are guaranteed to be in
+    // this same tenant (checked in TransferService before any money moves).
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    private Tenant tenant;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
@@ -54,12 +60,13 @@ public class Transfer {
     }
 
     public Transfer(String idempotencyKey, Long fromAccount, Long toAccount,
-                    BigDecimal amount, TransferStatus status) {
+                    BigDecimal amount, TransferStatus status, Tenant tenant) {
         this.idempotencyKey = idempotencyKey;
         this.fromAccount = fromAccount;
         this.toAccount = toAccount;
         this.amount = amount;
         this.status = status;
+        this.tenant = tenant;
     }
 
     public Long getId() {
@@ -84,6 +91,10 @@ public class Transfer {
 
     public TransferStatus getStatus() {
         return status;
+    }
+
+    public Tenant getTenant() {
+        return tenant;
     }
 
     public OffsetDateTime getCreatedAt() {

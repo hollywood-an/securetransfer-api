@@ -1,11 +1,13 @@
 package com.securetransfer.api.web;
 
+import com.securetransfer.api.security.AuthenticatedUser;
 import com.securetransfer.api.service.CustomerService;
 import com.securetransfer.api.web.dto.CreateCustomerRequest;
 import com.securetransfer.api.web.dto.CustomerResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -32,7 +34,8 @@ public class CustomerController {
     @PostMapping
     @PreAuthorize("hasAnyRole('TELLER', 'ADMIN')")
     @ResponseStatus(HttpStatus.CREATED)
-    public CustomerResponse create(@Valid @RequestBody CreateCustomerRequest request) {
-        return customerService.create(request);
+    public CustomerResponse create(@Valid @RequestBody CreateCustomerRequest request,
+                                   @AuthenticationPrincipal AuthenticatedUser currentUser) {
+        return customerService.create(request, currentUser.getTenant());
     }
 }

@@ -1,6 +1,7 @@
 package com.securetransfer.api.security;
 
 import com.securetransfer.api.domain.Role;
+import com.securetransfer.api.domain.Tenant;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -21,12 +22,14 @@ public class AuthenticatedUser implements UserDetails {
     private final String username;
     private final Role role;
     private final Long customerId; // null for staff (TELLER/ADMIN)
+    private final Tenant tenant;   // which bank this caller belongs to
 
-    public AuthenticatedUser(Long id, String username, Role role, Long customerId) {
+    public AuthenticatedUser(Long id, String username, Role role, Long customerId, Tenant tenant) {
         this.id = id;
         this.username = username;
         this.role = role;
         this.customerId = customerId;
+        this.tenant = tenant;
     }
 
     @Override
@@ -75,6 +78,10 @@ public class AuthenticatedUser implements UserDetails {
 
     public Long getCustomerId() {
         return customerId;
+    }
+
+    public Tenant getTenant() {
+        return tenant;
     }
 
     public boolean isCustomer() {

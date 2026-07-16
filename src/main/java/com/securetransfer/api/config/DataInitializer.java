@@ -1,6 +1,7 @@
 package com.securetransfer.api.config;
 
 import com.securetransfer.api.domain.Role;
+import com.securetransfer.api.domain.Tenant;
 import com.securetransfer.api.domain.User;
 import com.securetransfer.api.repository.UserRepository;
 import org.slf4j.Logger;
@@ -45,21 +46,23 @@ public class DataInitializer implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
-        seedStaff("admin", adminPassword, Role.ADMIN);
-        seedStaff("teller", tellerPassword, Role.TELLER);
-        // A public demo TELLER (see app.seed.demo-password). Skipped when blank so
-        // a real deployment can disable it by setting DEMO_PASSWORD to empty.
+        // admin + teller share the STAFF bank (the real showcase).
+        seedStaff("admin", adminPassword, Role.ADMIN, Tenant.STAFF);
+        seedStaff("teller", tellerPassword, Role.TELLER, Tenant.STAFF);
+        // The public demo TELLER lives in its OWN bank (DEMO) — a self-contained
+        // sandbox, isolated from staff data. Skipped when blank so a real
+        // deployment can disable it by setting DEMO_PASSWORD to empty.
         if (demoPassword != null && !demoPassword.isBlank()) {
-            seedStaff("demo", demoPassword, Role.TELLER);
+            seedStaff("demo", demoPassword, Role.TELLER, Tenant.DEMO);
         }
     }
 
-    private void seedStaff(String username, String rawPassword, Role role) {
+    private void seedStaff(String username, String rawPassword, Role role, Tenant tenant) {
         if (users.existsByUsername(username)) {
             return;
         }
-        users.save(new User(username, passwordEncoder.encode(rawPassword), role, null));
-        log.warn("Seeded {} user '{}' with a configured password — change it in production.",
-                role, username);
+        users.save(new User(username, passwordEncoder.encode(rawPassword), role, null, tenant));
+        log.warn("Seeded {} user '{}' ({} tenant) with a configured password — change it in production.",
+                role, username, tenant);
     }
 }

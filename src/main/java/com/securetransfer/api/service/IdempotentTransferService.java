@@ -2,6 +2,7 @@ package com.securetransfer.api.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.securetransfer.api.domain.IdempotencyStatus;
+import com.securetransfer.api.domain.Tenant;
 import com.securetransfer.api.error.ConflictException;
 import com.securetransfer.api.service.IdempotencyService.Claim;
 import com.securetransfer.api.web.dto.CreateTransferRequest;
@@ -38,7 +39,7 @@ public class IdempotentTransferService {
         this.objectMapper = objectMapper;
     }
 
-    public TransferResponse transfer(String idempotencyKey, CreateTransferRequest request) {
+    public TransferResponse transfer(String idempotencyKey, CreateTransferRequest request, Tenant tenant) {
         String requestHash = hash(request);
 
         Claim claim = idempotency.claim(idempotencyKey, requestHash);
@@ -48,7 +49,7 @@ public class IdempotentTransferService {
             // the key COMPLETED in its own transaction). If it fails, release the
             // key so the client can retry with the same key.
             try {
-                return transferService.execute(idempotencyKey, request, requestHash);
+                return transferService.execute(idempotencyKey, request, requestHash, tenant);
             } catch (RuntimeException e) {
                 idempotency.release(idempotencyKey);
                 throw e;

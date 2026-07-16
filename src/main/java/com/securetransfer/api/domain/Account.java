@@ -56,6 +56,13 @@ public class Account {
     @Version
     private Long version;
 
+    // Which bank this account belongs to (STAFF vs DEMO). Stored directly (rather
+    // than read through the customer) so the tenant check on the hot getById /
+    // transfer path is a plain column read, no join.
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    private Tenant tenant;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
@@ -64,11 +71,12 @@ public class Account {
         // JPA requires a no-arg constructor.
     }
 
-    public Account(Customer customer, String currency, BigDecimal balance) {
+    public Account(Customer customer, String currency, BigDecimal balance, Tenant tenant) {
         this.customer = customer;
         this.currency = currency;
         this.balance = balance;
         this.status = AccountStatus.ACTIVE;
+        this.tenant = tenant;
     }
 
     /**
@@ -117,6 +125,10 @@ public class Account {
 
     public AccountStatus getStatus() {
         return status;
+    }
+
+    public Tenant getTenant() {
+        return tenant;
     }
 
     public Long getVersion() {

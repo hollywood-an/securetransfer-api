@@ -1,6 +1,7 @@
 package com.securetransfer.api.service;
 
 import com.securetransfer.api.domain.Customer;
+import com.securetransfer.api.domain.Tenant;
 import com.securetransfer.api.error.ConflictException;
 import com.securetransfer.api.repository.CustomerRepository;
 import com.securetransfer.api.web.dto.CreateCustomerRequest;
@@ -30,15 +31,16 @@ public class CustomerService {
      * it throws.
      */
     @Transactional
-    public CustomerResponse create(CreateCustomerRequest request) {
-        // Friendly check for a duplicate email. (The DB's UNIQUE constraint is
-        // the ultimate backstop, handled in GlobalExceptionHandler.)
-        if (customers.existsByEmail(request.email())) {
+    public CustomerResponse create(CreateCustomerRequest request, Tenant tenant) {
+        // Friendly check for a duplicate email WITHIN the caller's bank. (The DB's
+        // per-tenant UNIQUE constraint is the ultimate backstop, handled in
+        // GlobalExceptionHandler.)
+        if (customers.existsByTenantAndEmail(tenant, request.email())) {
             throw new ConflictException(
                     "A customer with email '" + request.email() + "' already exists");
         }
 
-        Customer saved = customers.save(new Customer(request.name(), request.email()));
+        Customer saved = customers.save(new Customer(request.name(), request.email(), tenant));
         return CustomerResponse.from(saved);
     }
 }

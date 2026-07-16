@@ -41,25 +41,29 @@ public class FraudReviewController {
         this.fraudReviewService = fraudReviewService;
     }
 
-    // GET /fraud-reviews?status=&page=&size= — the review queue, newest first.
+    // GET /fraud-reviews?status=&page=&size= — the caller's review queue, newest
+    // first. Scoped to the caller's bank (DEMO never sees STAFF reviews).
     @GetMapping
     public PagedResponse<FraudReviewResponse> list(
             @RequestParam(required = false) FraudReviewStatus status,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") int size,
+            @AuthenticationPrincipal AuthenticatedUser currentUser) {
 
         int safePage = Math.max(0, page);
         int safeSize = Math.min(Math.max(1, size), MAX_PAGE_SIZE);
         Pageable pageable = PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "createdAt"));
 
-        Page<FraudReview> result = fraudReviewService.list(status, pageable);
+        Page<FraudReview> result = fraudReviewService.list(status, currentUser.getTenant(), pageable);
         return PagedResponse.from(result.map(FraudReviewResponse::from));
     }
 
-    // GET /fraud-reviews/{id} — one review (404 if unknown).
+    // GET /fraud-reviews/{id} — one review in the caller's bank (404 if unknown
+    // or in the other bank).
     @GetMapping("/{id}")
-    public FraudReviewResponse getById(@PathVariable Long id) {
-        return FraudReviewResponse.from(fraudReviewService.getById(id));
+    public FraudReviewResponse getById(@PathVariable Long id,
+                                       @AuthenticationPrincipal AuthenticatedUser currentUser) {
+        return FraudReviewResponse.from(fraudReviewService.getById(id, currentUser.getTenant()));
     }
 
     // POST /fraud-reviews/{id}/decision — record the human's final decision.
@@ -68,7 +72,7 @@ public class FraudReviewController {
                                       @Valid @RequestBody RecordDecisionRequest request,
                                       @AuthenticationPrincipal AuthenticatedUser currentUser) {
         FraudReview updated = fraudReviewService.recordDecision(
-                id, request.decision(), currentUser.getUsername());
+                id, request.decision(), currentUser.getUsername(), currentUser.getTenant());
         return FraudReviewResponse.from(updated);
     }
 }

@@ -50,11 +50,12 @@ public class TransferController {
         }
 
         // Authorization: a CUSTOMER may only transfer FROM their own account.
-        // (Staff — TELLER/ADMIN — may move money from any account.)
+        // (Staff — TELLER/ADMIN — may move money from any account in their bank.)
         if (currentUser.isCustomer()) {
-            accountService.assertCustomerOwns(request.fromAccount(), currentUser.getCustomerId());
+            accountService.assertCustomerOwns(
+                    request.fromAccount(), currentUser.getCustomerId(), currentUser.getTenant());
         }
 
-        return transferService.transfer(idempotencyKey, request);
+        return transferService.transfer(idempotencyKey, request, currentUser.getTenant());
     }
 }

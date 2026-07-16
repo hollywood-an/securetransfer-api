@@ -2,6 +2,8 @@ package com.securetransfer.api.domain;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -27,8 +29,15 @@ public class Customer {
     @Column(nullable = false)
     private String name;
 
-    @Column(nullable = false, unique = true)
+    // Note: email is unique PER TENANT (see V6), not globally, so the STAFF and
+    // DEMO banks can each independently hold a customer with the same email.
+    @Column(nullable = false)
     private String email;
+
+    // Which bank this customer belongs to (STAFF vs DEMO).
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    private Tenant tenant;
 
     @CreationTimestamp // Hibernate sets this once, when the row is first inserted
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -38,9 +47,10 @@ public class Customer {
         // JPA requires a no-arg constructor; not meant for application code.
     }
 
-    public Customer(String name, String email) {
+    public Customer(String name, String email, Tenant tenant) {
         this.name = name;
         this.email = email;
+        this.tenant = tenant;
     }
 
     public Long getId() {
@@ -53,6 +63,10 @@ public class Customer {
 
     public String getEmail() {
         return email;
+    }
+
+    public Tenant getTenant() {
+        return tenant;
     }
 
     public OffsetDateTime getCreatedAt() {

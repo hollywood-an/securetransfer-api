@@ -1,6 +1,7 @@
 package com.securetransfer.api.security;
 
 import com.securetransfer.api.domain.Role;
+import com.securetransfer.api.domain.Tenant;
 import com.securetransfer.api.domain.User;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtBuilder;
@@ -43,6 +44,7 @@ public class JwtService {
                 .subject(user.getUsername())
                 .claim("userId", user.getId())
                 .claim("role", user.getRole().name())
+                .claim("tenant", user.getTenant().name())
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plusSeconds(expirationMinutes * 60)));
         if (user.getCustomerId() != null) {
@@ -66,8 +68,13 @@ public class JwtService {
         String username = claims.getSubject();
         Role role = Role.valueOf((String) claims.get("role"));
         Long customerId = toLong(claims.get("customerId")); // null for staff
+        // Default to STAFF for any token minted before tenants existed. Tokens are
+        // short-lived and held only in memory, so everyone re-logs in with a real
+        // tenant claim shortly after this ships.
+        Object tenantClaim = claims.get("tenant");
+        Tenant tenant = tenantClaim == null ? Tenant.STAFF : Tenant.valueOf((String) tenantClaim);
 
-        return new AuthenticatedUser(userId, username, role, customerId);
+        return new AuthenticatedUser(userId, username, role, customerId, tenant);
     }
 
     public long expirationMinutes() {

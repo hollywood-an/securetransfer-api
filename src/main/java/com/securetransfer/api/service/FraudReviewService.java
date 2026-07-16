@@ -4,6 +4,7 @@ import com.securetransfer.api.domain.Account;
 import com.securetransfer.api.domain.FraudReview;
 import com.securetransfer.api.domain.FraudReviewStatus;
 import com.securetransfer.api.domain.RecommendedAction;
+import com.securetransfer.api.domain.Tenant;
 import com.securetransfer.api.domain.Transfer;
 import com.securetransfer.api.error.ConflictException;
 import com.securetransfer.api.error.NotFoundException;
@@ -103,15 +104,22 @@ public class FraudReviewService {
                 "transfer:" + review.getTransferId(), metadata);
     }
 
-    /** The review queue (optionally filtered by status), newest first. */
+    /**
+     * The review queue for the caller's bank (optionally filtered by status),
+     * newest first. Scoped by tenant so DEMO never sees STAFF reviews and vice
+     * versa.
+     */
     @Transactional(readOnly = true)
-    public Page<FraudReview> list(FraudReviewStatus status, Pageable pageable) {
-        return status == null ? reviews.findAll(pageable) : reviews.findByStatus(status, pageable);
+    public Page<FraudReview> list(FraudReviewStatus status, Tenant tenant, Pageable pageable) {
+        return status == null
+                ? reviews.findByTenant(tenant, pageable)
+                : reviews.findByStatusAndTenant(status, tenant, pageable);
     }
 
     @Transactional(readOnly = true)
-    public FraudReview getById(Long id) {
+    public FraudReview getById(Long id, Tenant tenant) {
         return reviews.findById(id)
+                .filter(r -> r.getTenant() == tenant) // cross-tenant → 404 (invisible)
                 .orElseThrow(() -> new NotFoundException("Fraud review " + id + " not found"));
     }
 
@@ -121,11 +129,17 @@ public class FraudReviewService {
      * money; acting on a HOLD/ESCALATE is a separate, human-driven step.
      */
     @Transactional
-    public FraudReview recordDecision(Long id, RecommendedAction decision, String actor) {
+    public FraudReview recordDecision(Long id, RecommendedAction decision, String actor, Tenant tenant) {
         // Lock the row so this serializes against the async agent verdict: we
         // re-read the committed status under the lock before deciding.
         FraudReview review = reviews.findByIdForUpdate(id)
                 .orElseThrow(() -> new NotFoundException("Fraud review " + id + " not found"));
+        // A caller may only decide reviews in their OWN bank; a cross-tenant id
+        // is invisible (404), so DEMO can decide only its own reviews and staff
+        // only theirs.
+        if (review.getTenant() != tenant) {
+            throw new NotFoundException("Fraud review " + id + " not found");
+        }
         if (review.getStatus() == FraudReviewStatus.DECIDED) {
             throw new ConflictException("Fraud review " + id + " has already been decided");
         }

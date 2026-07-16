@@ -34,6 +34,12 @@ public class FraudReview {
     @Column(name = "transfer_id", nullable = false)
     private Long transferId;
 
+    // Which bank this review belongs to (copied from the flagged transfer's
+    // accounts). The review queue is listed filtered by tenant.
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    private Tenant tenant;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private FraudReviewStatus status;
@@ -85,9 +91,10 @@ public class FraudReview {
     }
 
     /** A freshly flagged transfer's review: PENDING, with the rules that fired. */
-    public static FraudReview pending(Long transferId, List<String> flagReasons) {
+    public static FraudReview pending(Long transferId, List<String> flagReasons, Tenant tenant) {
         FraudReview r = new FraudReview();
         r.transferId = transferId;
+        r.tenant = tenant;
         r.status = FraudReviewStatus.PENDING;
         r.flagReasons = flagReasons;
         r.decidedBy = "AGENT";
@@ -119,6 +126,10 @@ public class FraudReview {
 
     public Long getTransferId() {
         return transferId;
+    }
+
+    public Tenant getTenant() {
+        return tenant;
     }
 
     public FraudReviewStatus getStatus() {

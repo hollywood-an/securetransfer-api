@@ -41,6 +41,12 @@ public class User {
     @Column(name = "customer_id")
     private Long customerId;
 
+    // Which bank this login belongs to (STAFF vs DEMO). Carried into the JWT so
+    // every request knows the caller's tenant without a DB lookup.
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    private Tenant tenant;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
@@ -49,11 +55,12 @@ public class User {
         // JPA requires a no-arg constructor.
     }
 
-    public User(String username, String passwordHash, Role role, Long customerId) {
+    public User(String username, String passwordHash, Role role, Long customerId, Tenant tenant) {
         this.username = username;
         this.password = passwordHash;
         this.role = role;
         this.customerId = customerId;
+        this.tenant = tenant;
     }
 
     public Long getId() {
@@ -75,6 +82,10 @@ public class User {
 
     public Long getCustomerId() {
         return customerId;
+    }
+
+    public Tenant getTenant() {
+        return tenant;
     }
 
     public OffsetDateTime getCreatedAt() {

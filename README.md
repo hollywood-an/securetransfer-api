@@ -22,8 +22,10 @@ Then: **Seed demo** (creates a customer + two accounts) → send a transfer of
 AI's score, reasoning, and your Approve / Hold / Escalate call.
 
 _(The `demo` login is an intentionally-public **TELLER** — it can't freeze accounts,
-read the audit log, or manage users. The backend is on Render's free tier, so the
-first request after idle cold-starts in ~30–60s.)_
+read the audit log, or manage users — and it's a **self-contained sandbox**: an isolated
+tenant that only ever sees its own data, so your transfers never touch (or reveal) anyone
+else's. The backend is on Render's free tier, so the first request after idle cold-starts
+in ~30–60s.)_
 
 **Raw API:** [`securetransfer-api.onrender.com`](https://securetransfer-api.onrender.com)
 (JSON only — `GET /` returns `401`; start with `/auth/**`).
@@ -34,7 +36,8 @@ first request after idle cold-starts in ~30–60s.)_
 - **Concurrency-safe — and measured** — pessimistic row locks (`SELECT … FOR UPDATE`) acquired in ascending account-id order, so opposing transfers can't deadlock. A [load test](docs/load-test.md) fires **300 concurrent contended transfers** and asserts the accounts land on the **exact** expected balances (0 lost updates), p95 ≈ 160 ms — plus a duplicate-key race that charges **exactly once** and a funds-check race that **can't be overdrawn**.
 - **Idempotent payments as a real protocol** — `Idempotency-Key` required on every transfer; replays return the stored result, an in-flight duplicate gets `409`, and reusing a key with a *different body* is rejected.
 - **AI fraud triage with hard guardrails** — an Anthropic-SDK agent investigates flagged transfers with **read-only tools**, its score maps to an action through a **deterministic policy** (never the model's whim), and a human always makes the final call.
-- **75 tests across 19 classes** — including Testcontainers integration suites that assert both the HTTP response *and* the resulting database state (exact balances, ledger rows netting to zero) against a real Postgres, plus a concurrency stress test.
+- **Multi-tenant isolation** — the public `demo` login is a self-contained sandbox (its own "bank"): the tenant is derived from the JWT and enforced server-side on every read and write, so demo and staff data never mix. It's a visibility layer bolted in front of the money core — which is left byte-for-byte unchanged — proven by a dedicated isolation suite.
+- **79 tests across 19 classes** — including Testcontainers integration suites that assert both the HTTP response *and* the resulting database state (exact balances, ledger rows netting to zero) against a real Postgres, plus concurrency and tenant-isolation suites.
 - **CI-gated delivery** — every PR must pass the full suite (required status check) before merge; merges to `master` deploy to Render. Dependabot + CodeQL run continuously.
 
 ## 🔍 I red-teamed my own fraud agent
