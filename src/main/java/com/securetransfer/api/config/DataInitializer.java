@@ -29,21 +29,29 @@ public class DataInitializer implements ApplicationRunner {
     private final PasswordEncoder passwordEncoder;
     private final String adminPassword;
     private final String tellerPassword;
+    private final String demoPassword;
 
     public DataInitializer(UserRepository users,
                            PasswordEncoder passwordEncoder,
                            @Value("${app.seed.admin-password}") String adminPassword,
-                           @Value("${app.seed.teller-password}") String tellerPassword) {
+                           @Value("${app.seed.teller-password}") String tellerPassword,
+                           @Value("${app.seed.demo-password:}") String demoPassword) {
         this.users = users;
         this.passwordEncoder = passwordEncoder;
         this.adminPassword = adminPassword;
         this.tellerPassword = tellerPassword;
+        this.demoPassword = demoPassword;
     }
 
     @Override
     public void run(ApplicationArguments args) {
         seedStaff("admin", adminPassword, Role.ADMIN);
         seedStaff("teller", tellerPassword, Role.TELLER);
+        // A public demo TELLER (see app.seed.demo-password). Skipped when blank so
+        // a real deployment can disable it by setting DEMO_PASSWORD to empty.
+        if (demoPassword != null && !demoPassword.isBlank()) {
+            seedStaff("demo", demoPassword, Role.TELLER);
+        }
     }
 
     private void seedStaff(String username, String rawPassword, Role role) {
