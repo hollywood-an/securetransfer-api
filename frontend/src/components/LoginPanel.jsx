@@ -9,8 +9,8 @@ const DEMO_PASSWORD = 'demopass123'
 // Screen 1 — Login. Sends username/password to POST /auth/login, and on success
 // hands the token + role back up to <App> (which holds it in memory).
 export default function LoginPanel({ baseUrl, onLogin }) {
-  const [username, setUsername] = useState(DEMO_USERNAME)
-  const [password, setPassword] = useState(DEMO_PASSWORD)
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
 
@@ -55,7 +55,7 @@ export default function LoginPanel({ baseUrl, onLogin }) {
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
         </div>
         {error && <div className="result-err">{error}</div>}
-        <button className="btn btn-primary" type="submit" disabled={busy || !password}>
+        <button className="btn btn-primary" type="submit" disabled={busy || !username || !password}>
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
         <p className="muted small cold-start-note">
