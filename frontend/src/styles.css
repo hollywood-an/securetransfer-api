@@ -53,6 +53,15 @@ body {
 .card h2 { margin: 0 0 12px; font-size: 16px; }
 .card-head { display: flex; align-items: center; justify-content: space-between; }
 .login-card { max-width: 440px; margin: 24px auto 0; }
+.demo-creds {
+  margin: 0 0 16px; padding: 10px 12px; border-radius: 9px;
+  background: rgba(240, 180, 41, .08); border: 1px solid rgba(240, 180, 41, .35);
+}
+.demo-creds-title { font-size: 11px; letter-spacing: .05em; text-transform: uppercase; font-weight: 700; color: #f0b429; margin-bottom: 4px; }
+.demo-creds-row { display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; font-size: 14px; }
+.demo-creds-row code { margin-right: 10px; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; background: #0c1322; border: 1px solid var(--border); padding: 1px 6px; border-radius: 6px; color: var(--text); }
+.cold-start-note { margin: 12px 0 0; }
 
 /* --- forms --- */
 .field { margin-bottom: 12px; }
